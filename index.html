@@ -803,7 +803,10 @@ function renderQuick() {
           </div>
           <button data-qvwish class="w-11 h-11 rounded-full border border-black/15 grid place-items-center hover:border-ink" aria-label="Toggle wishlist">${heartSvg(wish.has(p.id), 'w-5 h-5')}</button>
         </div>
-        <button data-qvadd class="mt-4 w-full py-3.5 rounded-full bg-leaf-500 hover:bg-ink hover:text-white text-ink font-bold transition">Add to Cart · ${taka(p.offer * qvQty)}</button>
+        <div class="mt-4 grid grid-cols-2 gap-3">
+          <button data-qvadd class="py-3.5 rounded-full bg-leaf-500 hover:bg-ink hover:text-white text-ink font-bold transition text-sm sm:text-base">Add to Cart · ${taka(p.offer * qvQty)}</button>
+          <button data-qvbuy class="py-3.5 rounded-full bg-ink hover:bg-leaf-500 text-white hover:text-ink font-bold transition text-sm sm:text-base">Buy Now</button>
+        </div>
       </div>
     </div>`;
 }
@@ -1099,6 +1102,7 @@ $('#coForm').addEventListener('submit', async (e) => {
   setOrdering(true);
   try {
     await saveOrder(order, t);
+    try { fetch('/api/notify', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ text }), keepalive: true }).catch(() => {}); } catch (ex) {}
     lastOrderText = text;
     showingSuccess = true;
     cart = {}; promoApplied = ''; promoErr = ''; currentOrderId = null;
@@ -1192,6 +1196,7 @@ document.addEventListener('click', (e) => {
   if (e.target.closest('[data-qvminus]')) { qvQty = Math.max(1, qvQty - 1); return renderQuick(); }
   if (e.target.closest('[data-qvplus]')) { qvQty = Math.min(20, qvQty + 1); return renderQuick(); }
   if (e.target.closest('[data-qvwish]')) { toggleWish(qvId); return renderQuick(); }
+  if (e.target.closest('[data-qvbuy]')) { addToCart(qvId, qvQty); closeQuick(); closeCart(); location.hash = '#checkout'; return; }
   if (e.target.closest('[data-qvadd]')) { addToCart(qvId, qvQty); closeQuick(); return openCart(); }
 
   const inc = e.target.closest('[data-inc]');
