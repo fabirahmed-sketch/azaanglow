@@ -324,6 +324,18 @@
     <div id="bambooGrid" class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3 sm:gap-6"></div>
   </div>
 
+  <!-- Other categories (Face, Lip, Eye, Makeup...) -->
+  <div id="otherSec" class="mt-14 hidden scroll-mt-28">
+    <div class="flex items-end justify-between gap-3 mb-5 pb-3 border-b border-black/10">
+      <div>
+        <h3 id="otherTitle" class="font-display text-xl sm:text-2xl font-extrabold">More Products</h3>
+        <p class="text-sm text-black/55 mt-0.5">Authentic skincare, haircare &amp; beauty</p>
+      </div>
+      <span id="otherCount" class="shrink-0 px-3 py-1 rounded-full bg-leaf-100 text-leaf-800 text-xs font-bold"></span>
+    </div>
+    <div id="otherGrid" class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3 sm:gap-6"></div>
+  </div>
+
   <p id="emptyMsg" class="hidden text-center text-black/60 py-16"></p>
 </section>
 
@@ -691,11 +703,12 @@ function renderCats() {
   </a>`;
   const imgV = (src, name) => `<img src="${src}" alt="${name}" loading="lazy" class="w-full h-full object-cover transition duration-500 group-hover:scale-110">`;
   const icoV = (ic) => `<div class="w-full h-full grid place-items-center text-leaf-700"><svg class="w-1/2 h-1/2" fill="none" stroke="currentColor" stroke-width="1.3" viewBox="0 0 24 24">${ic}</svg></div>`;
-  const depts = DEPTS.map((d) => tile(d.soon ? '#' : '#haircare', d.soon ? `data-soon="${d.name}"` : '', d.name, d.img ? imgV(d.img, d.name) : icoV(d.icon),
+  const deptProds = (d) => d.name === 'Hair' ? [] : PRODUCTS.filter((p) => (p.cats || [p.cat]).includes(d.name));
+  const depts = DEPTS.map((d) => { const dp = deptProds(d); if (d.soon && dp.length) return tile('#catproducts', `data-cat="${esc(d.name)}"`, d.name, IMG[dp[0].id] ? imgV(IMG[dp[0].id], d.name) : icoV(d.icon), 'border-[3px] border-leaf-500', 'bg-leaf-500 text-ink', dp.length + ' products'); return tile(d.soon ? '#' : '#haircare', d.soon ? `data-soon="${d.name}"` : '', d.name, d.img ? imgV(d.img, d.name) : icoV(d.icon),
     d.soon ? 'border border-black/10' : 'border-[3px] border-leaf-500',
-    d.soon ? 'bg-black/5 text-black/55' : 'bg-leaf-500 text-ink', d.soon ? 'Coming soon' : PRODUCTS.length + ' products'));
+    d.soon ? 'bg-black/5 text-black/55' : 'bg-leaf-500 text-ink', d.soon ? 'Coming soon' : PRODUCTS.length + ' products'); });
   // এডমিন প্যানেল থেকে যে প্রোডাক্ট যে ক্যাটাগরিতে রাখা হয়েছে সেই অনুযায়ী আইকন তৈরি হয়; প্রোডাক্ট না থাকলে আইকন দেখায় না
-  const names = [...new Set([...BASE_SUB_CATS, ...PRODUCTS.flatMap((p) => p.cats || [p.cat])])];
+  const names = [...new Set([...BASE_SUB_CATS, ...PRODUCTS.flatMap((p) => p.cats || [p.cat])])].filter((n) => !DEPTS.some((d) => d.name === n));
   const sub = names.map((n) => [n, PRODUCTS.filter((p) => (p.cats || [p.cat]).includes(n))]).filter(([, l]) => l.length)
     .map(([n, l]) => tile('#haircare', `data-cat="${esc(n)}"`, esc(n), imgV(IMG[l[0].id] || IMG[SUB_CAT_FALLBACK_IMG[n]] || '', esc(n)),
     'border-[3px] border-leaf-500', 'bg-leaf-500 text-ink', l.length + ' products'));
@@ -764,6 +777,12 @@ function renderProducts() {
     $('#' + key + 'Count').textContent = items.length + (items.length === 1 ? ' product' : ' products');
     $('#' + key + 'Sec').classList.toggle('hidden', items.length === 0);
   });
+
+  const others = list.filter((p) => { const g = p.groups || [p.group]; return !g.includes('sandalwood') && !g.includes('bamboo'); });
+  $('#otherTitle').textContent = activeCat === 'All' || showWish ? 'More Products' : activeCat;
+  $('#otherGrid').innerHTML = others.map(productCard).join('');
+  $('#otherCount').textContent = others.length + (others.length === 1 ? ' product' : ' products');
+  $('#otherSec').classList.toggle('hidden', others.length === 0);
 
   const empty = $('#emptyMsg');
   empty.classList.toggle('hidden', list.length > 0);
@@ -1174,6 +1193,13 @@ document.addEventListener('click', (e) => {
   const soon = e.target.closest('[data-soon]');
   if (soon) {
     e.preventDefault(); closeMenu();
+    const nm = soon.dataset.soon;
+    if (PRODUCTS.some((p) => (p.cats || [p.cat]).includes(nm))) {
+      activeCat = nm; showWish = false; renderChips(); renderProducts();
+      const os = document.getElementById('otherSec');
+      if (isCheckout()) location.hash = '#haircare';
+      return void setTimeout(() => (os.classList.contains('hidden') ? document.getElementById('haircare') : os).scrollIntoView({ behavior: 'smooth' }), 60);
+    }
     toast(soon.dataset.soon + ' is coming soon!');
     return goTo('notify');
   }
@@ -1487,7 +1513,8 @@ window.azApplyBanners = (arr) => {
     const a = e.target.closest('[data-cat]'); if (!a) return;
     e.preventDefault(); activeCat = a.dataset.cat; showWish = false;
     renderChips(); renderProducts();
-    document.getElementById('haircare').scrollIntoView({ behavior: 'smooth' });
+    const os = document.getElementById('otherSec');
+    (a.getAttribute('href') === '#catproducts' && !os.classList.contains('hidden') ? os : document.getElementById('haircare')).scrollIntoView({ behavior: 'smooth' });
   });
 })();
 
