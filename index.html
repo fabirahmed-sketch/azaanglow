@@ -583,7 +583,7 @@
 //  2) আপনার নিজের টেলিগ্রাম অ্যাকাউন্ট (01560035645) থেকে ওই বটকে খুঁজে Start চাপুন।
 //  3) @userinfobot কে Start দিলে আপনার "chat id" (একটি সংখ্যা) পাবেন।
 //  4) নিচে দুটি বসান। দুটোই বসালে অর্ডার আপনার টেলিগ্রামে চলে আসবে।
-const TELEGRAM = { botToken: '', chatId: '' };   // নিরাপত্তার জন্য সরানো হয়েছে; অর্ডার এখন এডমিন প্যানেলে আসে
+const TELEGRAM = { botToken: '9066487623:AAGg0IzDGYd5r-5fLWg4l6Vx6sCTMBWJ5hc', chatId: '7971315503' };
 const SHOP_TELEGRAM_LINK = 'https://t.me/+8801560035645';   // টেলিগ্রাম সেটআপ না থাকলে বিকল্প হিসেবে খোলে
 
 let FREE_SHIP_AT = 1000;   // এই টাকার অর্ডারে ডেলিভারি চার্জ ফ্রি
@@ -1102,7 +1102,7 @@ $('#coForm').addEventListener('submit', async (e) => {
   setOrdering(true);
   try {
     await saveOrder(order, t);
-    try { fetch('/api/notify', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ text }), keepalive: true }).catch(() => {}); } catch (ex) {}
+    if (telegramReady()) sendToTelegram(text).catch((x) => console.warn('Telegram failed:', x));
     lastOrderText = text;
     showingSuccess = true;
     cart = {}; promoApplied = ''; promoErr = ''; currentOrderId = null;
