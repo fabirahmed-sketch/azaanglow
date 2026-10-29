@@ -134,6 +134,9 @@ async function setSections(p, arr) {
 }
 
 /* ---------- ফিচারড ক্যাটাগরি (ওয়েবসাইটের গোল আইকনগুলো) ---------- */
+const BRANDS = [['Centella', ['centella']], ['Raip', ['raip', 'r3']], ['Daboo', ['daboo', 'dabo']], ['Skino', ['skino', 'skin o', 'skin-o']], ['XHC', ['xhc', 'xpel hair care']]];
+const canonBrand = t => { const k = String(t || '').trim().toLowerCase(); const b = BRANDS.find(([n, al]) => n.toLowerCase() === k || al.includes(k)); return b ? b[0] : String(t || '').trim(); };
+const detectBrand = name => { const k = ' ' + String(name || '').toLowerCase().replace(/[^a-z0-9]+/g, ' ') + ' '; const b = BRANDS.find(([n, al]) => al.some(a => k.includes(' ' + a + ' ') || (a.length > 3 && k.includes(a)))); return b ? b[0] : ''; };
 const BASE_CATS = ['Hair Brushes', 'Combs', 'Massagers', 'Face', 'Lip', 'Hair', 'Bath & Body', 'Eye', 'Makeup', 'Fragrance', 'K-Beauty', 'Pharmacy Items'];
 const catsOf = p => Array.isArray(p.featCats) ? p.featCats : (p.cat ? [p.cat] : []);
 const customCats = () => Array.isArray(D.settings.customCats) ? D.settings.customCats : [];
@@ -164,6 +167,7 @@ function vProducts() {
   <div class="grid grid-cols-2 md:grid-cols-4 gap-3">${list.map(p => `<div class="card overflow-hidden ${p.active === false ? 'opacity-50' : ''}">
     <img src="${esc(p.images?.[0] || '')}" class="w-full aspect-[4/5] object-cover bg-gray-100" alt="">
     <div class="p-3 text-sm"><p class="font-semibold leading-snug min-h-[2.6rem]">${esc(p.name)}</p>
+    ${p.brand ? `<p class="text-xs text-black/60">ব্র্যান্ড: <b>${esc(p.brand)}</b></p>` : ''}
     <p class="mt-1"><b>${tk(p.offer)}</b> <s class="text-black/40">${tk(p.regular)}</s></p>
     <p class="text-xs ${+p.stock <= 5 ? 'red font-bold' : 'text-black/60'}">স্টক: ${bn(+p.stock || 0)}${p.active === false ? ' · লুকানো' : ''}</p>
     <p class="text-xs mt-0.5 ${secOf(p).length ? 'text-black/60' : 'red font-bold'}">${secOf(p).length ? 'সেকশন: ' + SECTIONS.filter(s => secOf(p).includes(s[0])).map(s => s[2]).join(' · ') : 'কোনো সেকশনে নেই'}</p>
@@ -211,7 +215,9 @@ function productForm(p) {
   form = { id: p?.id, images: [...(p?.images || [])] };
   const cats = [...new Set([...allCats(), ...D.products.map(x => x.cat).filter(Boolean)])];
   openModal(`<h2 class="font-bold text-lg mb-3">${p ? 'প্রোডাক্ট এডিট' : 'নতুন প্রোডাক্ট'}</h2><div class="grid grid-cols-2 gap-3">
-    <label class="col-span-2 text-sm font-semibold">নাম<input id="fName" class="inp mt-1 font-normal" value="${esc(p?.name)}"></label>
+    <label class="col-span-2 text-sm font-semibold">নাম <span class="text-xs font-normal text-black/50">(ব্র্যান্ডের নাম সহ লিখুন, যেমন: Centella Serum — ব্র্যান্ড নিজে থেকে বসে যাবে)</span><input id="fName" data-in="pname" class="inp mt-1 font-normal" value="${esc(p?.name)}"></label>
+    <label class="col-span-2 text-sm font-semibold">ব্র্যান্ড<input id="fBrand" data-in="pbrand" list="brands" class="inp mt-1 font-normal" value="${esc(p?.brand || (p ? detectBrand(p.name) : ''))}" placeholder="ব্র্যান্ডের নাম (ঐচ্ছিক)"><datalist id="brands">${BRANDS.map(([n]) => `<option value="${n}">`).join('')}</datalist>
+      <div class="flex flex-wrap gap-1.5 mt-2 font-normal">${BRANDS.map(([n]) => `<button type="button" data-act="pickbrand" data-brand="${n}" class="btn2 !py-1 !px-2.5 !text-xs">${n}</button>`).join('')}<button type="button" data-act="pickbrand" data-brand="" class="btn2 red !py-1 !px-2.5 !text-xs">ব্র্যান্ড নেই</button></div></label>
     <label class="col-span-2 text-sm font-semibold">ক্যাটাগরি<input id="fCat" list="cats" class="inp mt-1 font-normal" value="${esc(p?.cat)}"><datalist id="cats">${cats.map(c => `<option value="${esc(c)}">`).join('')}</datalist>
       <div class="flex flex-wrap gap-1.5 mt-2 font-normal">${cats.map(c => `<button type="button" data-act="pickcat" data-cat="${esc(c)}" class="btn2 !py-1 !px-2.5 !text-xs">${esc(c)}</button>`).join('')}</div></label>
     <div class="col-span-2"><p class="text-sm font-semibold mb-1">ওয়েবসাইটের কোন কোন সেকশনে দেখাবে</p><div class="space-y-1.5 text-sm">${SECTIONS.map(([k, n]) => `<label class="flex items-center gap-2"><input type="checkbox" data-secchk="${k}" ${p && secOf(p).includes(k) ? 'checked' : ''}> ${n}</label>`).join('')}</div></div>
@@ -277,6 +283,7 @@ const A = {
     try { await setDoc(doc(db, 'settings', 'main'), { customCats: [...customCats(), n] }, { merge: true }); toast('ক্যাটাগরি যোগ হয়েছে ✅ এখন প্রোডাক্ট যোগ করুন'); } catch (e) { toast('যোগ হয়নি: ' + e.code); }
   },
   catdelete: async b => { if (!confirm('এই ক্যাটাগরি মুছবেন?')) return; try { await setDoc(doc(db, 'settings', 'main'), { customCats: customCats().filter(x => x !== b.dataset.cat) }, { merge: true }); toast('মুছে ফেলা হয়েছে'); } catch (e) { toast('মোছা হয়নি: ' + e.code); } },
+  pickbrand: b => { const f = $('#fBrand'); f.value = b.dataset.brand; f.dataset.auto = ''; },
   pickcat: b => {
     const k = b.dataset.cat; $('#fCat').value = k;
     const cb = [...document.querySelectorAll('[data-catchk]')].find(x => x.dataset.catchk === k); if (cb) cb.checked = true;
@@ -287,7 +294,7 @@ const A = {
     const secs = [...document.querySelectorAll('[data-secchk]:checked')].map(x => x.dataset.secchk);
     const fcats = [...document.querySelectorAll('[data-catchk]:checked')].map(x => x.dataset.catchk), newCat = $('#fCat').value.trim();
     if (!form.id && newCat && !fcats.includes(newCat)) fcats.push(newCat);
-    const d = { name: $('#fName').value.trim(), cat: $('#fCat').value.trim(), ...secFields(secs), featCats: fcats, regular: +$('#fReg').value, offer: +$('#fOff').value, stock: +$('#fStock').value || 0, desc: $('#fDesc').value.trim(), active: $('#fActive').checked, images: form.images };
+    const d = { name: $('#fName').value.trim(), brand: canonBrand($('#fBrand').value) || detectBrand($('#fName').value), cat: $('#fCat').value.trim(), ...secFields(secs), featCats: fcats, regular: +$('#fReg').value, offer: +$('#fOff').value, stock: +$('#fStock').value || 0, desc: $('#fDesc').value.trim(), active: $('#fActive').checked, images: form.images };
     if (!d.name || !d.offer) return toast('নাম ও অফার দাম দিন');
     if (!d.regular) d.regular = d.offer;
     if (d.images.join('').length > 950000) return toast('ছবির সাইজ বেশি, কয়েকটি ছবি বাদ দিন');
@@ -327,6 +334,8 @@ const A = {
 document.addEventListener('click', e => { const b = e.target.closest('[data-act]'); if (b && A[b.dataset.act]) A[b.dataset.act](b); });
 document.addEventListener('input', e => {
   const k = e.target.dataset.in;
+  if (k === 'pname') { const f = $('#fBrand'); if (f && (!f.value.trim() || f.dataset.auto === '1')) { const b = detectBrand(e.target.value); f.value = b; f.dataset.auto = b ? '1' : ''; } }
+  if (k === 'pbrand') e.target.dataset.auto = '';
   if (k === 'psearch') { pSearch = e.target.value; const p = e.target.selectionStart; render(); const n = $('[data-in=psearch]'); n.focus(); n.setSelectionRange(p, p); }
   if (k === 'osearch') { oSearch = e.target.value; const p = e.target.selectionStart; render(); const n = $('[data-in=osearch]'); n.focus(); n.setSelectionRange(p, p); }
 });
