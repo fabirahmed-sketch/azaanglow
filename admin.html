@@ -134,7 +134,7 @@ async function setSections(p, arr) {
 }
 
 /* ---------- ফিচারড ক্যাটাগরি (ওয়েবসাইটের গোল আইকনগুলো) ---------- */
-const BASE_CATS = ['Hair Brushes', 'Combs', 'Massagers'];
+const BASE_CATS = ['Hair Brushes', 'Combs', 'Massagers', 'Face', 'Lip', 'Hair', 'Bath & Body', 'Eye', 'Makeup', 'Fragrance', 'K-Beauty', 'Pharmacy Items'];
 const catsOf = p => Array.isArray(p.featCats) ? p.featCats : (p.cat ? [p.cat] : []);
 const customCats = () => Array.isArray(D.settings.customCats) ? D.settings.customCats : [];
 const allCats = () => [...new Set([...BASE_CATS, ...customCats(), ...D.products.flatMap(catsOf)])];
