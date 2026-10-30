@@ -45,7 +45,7 @@
 <script type="module">
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
 import { getAuth, signInWithEmailAndPassword, signOut, onAuthStateChanged, updatePassword } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
-import { getFirestore, collection, doc, setDoc, addDoc, updateDoc, deleteDoc, onSnapshot, query, orderBy, serverTimestamp, increment, writeBatch } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
+import { getFirestore, collection, doc, setDoc, addDoc, updateDoc, deleteDoc, onSnapshot, getDoc, query, orderBy, serverTimestamp, increment, writeBatch } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
 
 const app = initializeApp(window.FIREBASE_CONFIG), auth = getAuth(app), db = getFirestore(app);
 const $ = s => document.querySelector(s);
@@ -77,7 +77,7 @@ function listen(name, ord) {
   unsubs.push(onSnapshot(q, s => {
     D[name] = s.docs.map(d => ({ id: d.id, ...d.data() }));
     if (name === 'orders' && firstLoad.orders && soundOn && s.docChanges().some(c => c.type === 'added')) { beep(); toast('🛒 নতুন অর্ডার এসেছে!'); }
-    firstLoad[name] = true; render();
+    firstLoad[name] = true; if (name === 'products') { hadProducts ||= D.products.length > 0; schedSync(); } render();
   }, err => toast('ডাটা লোড হয়নি: ' + err.code)));
 }
 function listenSettings() { unsubs.push(onSnapshot(doc(db, 'settings', 'main'), s => { D.settings = s.data() || {}; render(); })); }
@@ -89,6 +89,20 @@ const fileToData = (f, max = 900, q = .8) => new Promise((ok, no) => {
   r.onload = () => { const im = new Image(); im.onload = () => { const k = Math.min(1, max / Math.max(im.width, im.height)), c = document.createElement('canvas'); c.width = im.width * k; c.height = im.height * k; c.getContext('2d').drawImage(im, 0, 0, c.width, c.height); ok(c.toDataURL('image/jpeg', q)); }; im.onerror = no; im.src = r.result; };
   r.onerror = no; r.readAsDataURL(f);
 });
+
+/* ---------- Cloudinary ছবি আপলোড (ছবি Cloudinary তে থাকে, ডাটাবেসে শুধু লিংক) ---------- */
+const CLD = { cloud: 'vapfnr6g', preset: 'azaan_products' };
+const toBlob = (f, max = 1200, q = .85) => new Promise((ok, no) => {
+  const r = new FileReader();
+  r.onload = () => { const im = new Image(); im.onload = () => { const k = Math.min(1, max / Math.max(im.width, im.height)), c = document.createElement('canvas'); c.width = Math.round(im.width * k); c.height = Math.round(im.height * k); c.getContext('2d').drawImage(im, 0, 0, c.width, c.height); c.toBlob(b => b ? ok(b) : no(new Error('blob')), 'image/jpeg', q); }; im.onerror = no; im.src = r.result; };
+  r.onerror = no; r.readAsDataURL(f);
+});
+async function uploadCld(file) {
+  const fd = new FormData(); fd.append('file', typeof file === 'string' ? file : await toBlob(file)); fd.append('upload_preset', CLD.preset);
+  const res = await fetch(`https://api.cloudinary.com/v1_1/${CLD.cloud}/image/upload`, { method: 'POST', body: fd });
+  const j = await res.json(); if (!res.ok || !j.secure_url) throw new Error(j.error?.message || 'upload failed');
+  return j.secure_url.replace('/upload/', '/upload/f_auto,q_auto,w_800/');
+}
 
 /* ---------- Modal ---------- */
 const openModal = h => { $('#modalBox').innerHTML = h; $('#modal').classList.remove('hidden'); };
@@ -164,7 +178,7 @@ async function setCats(p, arr) {
 function vProducts() {
   const q = pSearch.toLowerCase(), list = D.products.filter(p => !q || (p.name + p.cat).toLowerCase().includes(q)).sort((a, b) => (a.name || '').localeCompare(b.name || ''));
   return `<div class="flex gap-2 mb-3"><input class="inp" placeholder="প্রোডাক্ট খুঁজুন…" value="${esc(pSearch)}" data-in="psearch"><button class="btn shrink-0" data-act="pnew">+ নতুন</button></div>
-  ${vImport()}
+  ${vImport()}${vSyncBar()}
   <div class="grid grid-cols-2 md:grid-cols-4 gap-3">${list.map(p => `<div class="card overflow-hidden ${p.active === false ? 'opacity-50' : ''}">
     <img src="${esc(p.images?.[0] || '')}" class="w-full aspect-[4/5] object-cover bg-gray-100" alt="">
     <div class="p-3 text-sm"><p class="font-semibold leading-snug min-h-[2.6rem]">${esc(p.name)}</p>
@@ -412,6 +426,81 @@ function impSample() {
   const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([JSON.stringify(s, null, 2)], { type: 'application/json' })); a.download = 'products-sample.json'; a.click(); setTimeout(() => URL.revokeObjectURL(a.href), 2000);
 }
 
+/* ---------- সাইটের ক্যাটালগ: ভিজিটরের Firestore রিড কমানোর জন্য ----------
+   সব প্রোডাক্ট থেকে একটি হালকা তালিকা বানিয়ে কয়েকটি বড় ডকুমেন্টে (catalog/c0, c1…) রাখা হয়।
+   সাইট এখন ১৪০০টি ডকুমেন্টের বদলে শুধু এই কয়েকটি পড়ে। প্রোডাক্ট বদলালে তালিকা নিজে থেকে নতুন হয়। */
+let syncTimer = null, syncBusy = false, syncAgain = false, hadProducts = false, syncMsg = '';
+const CHUNK_BYTES = 700000;
+const setSync = m => { syncMsg = m; const el = $('#syncStat'); if (el) el.textContent = m; };
+const sha = async t => { try { const b = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(t)); return [...new Uint8Array(b)].map(x => x.toString(16).padStart(2, '0')).join('').slice(0, 24); } catch { let h = 5381; for (let i = 0; i < t.length; i++) h = ((h << 5) + h + t.charCodeAt(i)) | 0; return 'd' + (h >>> 0).toString(16) + t.length; } };
+const isData = x => String(x).startsWith('data:');
+function buildCatalog() {
+  return D.products.filter(p => p.active !== false && p.name && +p.offer > 0 && (+p.stock || 0) > 0)
+    .sort((a, b) => a.id < b.id ? -1 : a.id > b.id ? 1 : 0)
+    .map(p => {
+      const it = { fid: p.id, name: p.name, cat: p.cat || '', regular: +p.regular || +p.offer, offer: +p.offer, stock: 1, desc: p.desc || '', brand: p.brand || '', images: (p.images || []).filter(Boolean), sections: secOf(p) };
+      if (Array.isArray(p.featCats)) it.featCats = p.featCats;
+      return it;
+    });
+}
+function chunkItems(items) {
+  const chunks = []; let cur = [], size = 0, dropped = 0;
+  for (let it of items) {
+    let n = new TextEncoder().encode(JSON.stringify(it)).length;
+    if (n > 900000) { it = { ...it, images: [] }; n = new TextEncoder().encode(JSON.stringify(it)).length; dropped++; }
+    if (cur.length && size + n > CHUNK_BYTES) { chunks.push(cur); cur = []; size = 0; }
+    cur.push(it); size += n;
+  }
+  if (cur.length || !chunks.length) chunks.push(cur);
+  return { chunks, dropped };
+}
+function schedSync() { clearTimeout(syncTimer); syncTimer = setTimeout(() => syncCatalog(false), 2500); }
+async function syncCatalog(force) {
+  if (!auth.currentUser || !firstLoad.products) return;
+  if (!D.products.length && !hadProducts) return;
+  if (syncBusy) { syncAgain = true; return; }
+  syncBusy = true; setSync('⏳ সাইটের ক্যাটালগ আপডেট হচ্ছে…');
+  try {
+    const items = buildCatalog(), hash = await sha(JSON.stringify(items)), metaRef = doc(db, 'catalog', 'meta');
+    let meta = null; const ms = await getDoc(metaRef); if (ms.exists()) meta = ms.data();
+    if (!force && meta && meta.hash === hash) { setSync('✅ ক্যাটালগ ঠিক আছে (' + bn(meta.total ?? items.length) + 'টি প্রোডাক্ট, ' + bn(meta.count) + 'টি ডকুমেন্ট)'); return; }
+    const { chunks, dropped } = chunkItems(items);
+    for (let i = 0; i < chunks.length; i += 6) {
+      const b = writeBatch(db);
+      chunks.slice(i, i + 6).forEach((c, j) => b.set(doc(db, 'catalog', 'c' + (i + j)), { items: c, v: hash, n: i + j }));
+      await b.commit();
+    }
+    const b = writeBatch(db);
+    for (let k = chunks.length; k < (meta?.count || 0); k++) b.delete(doc(db, 'catalog', 'c' + k));
+    b.set(metaRef, { count: chunks.length, hash, total: D.products.length, shown: items.length, updatedAt: serverTimestamp() });
+    await b.commit();
+    setSync('✅ ক্যাটালগ আপডেট হয়েছে (' + bn(items.length) + 'টি প্রোডাক্ট, ' + bn(chunks.length) + 'টি ডকুমেন্ট)' + (dropped ? ` ⚠ ${bn(dropped)}টি প্রোডাক্টের ছবি বেশি ভারী, সাইটে দেখাবে না — "পুরনো ছবি Cloudinary-তে সরান" চাপুন` : ''));
+  } catch (e) {
+    setSync('❌ ক্যাটালগ আপডেট হয়নি: ' + (e.code || e.message) + (e.code === 'permission-denied' ? ' — Firebase Rules এ catalog এর অনুমতি যোগ করুন' : ''));
+  } finally { syncBusy = false; if (syncAgain) { syncAgain = false; schedSync(); } }
+}
+function vSyncBar() {
+  const heavy = D.products.filter(p => (p.images || []).some(isData)).length;
+  return `<div class="card p-4 mb-3 text-sm"><p class="font-semibold">⚡ সাইটের ক্যাটালগ (রিড কমানোর ব্যবস্থা)</p>
+  <p class="text-xs text-black/60 mt-1">প্রোডাক্ট বদলালে সাইটের জন্য হালকা তালিকা নিজে থেকে তৈরি হয়, তাই ভিজিটরের রিড অনেক কম লাগে। সাধারণত কিছু করতে হবে না।</p>
+  <p id="syncStat" class="text-xs font-semibold mt-2">${esc(syncMsg || 'অপেক্ষা করছে…')}</p>
+  <div class="flex flex-wrap gap-2 mt-2"><button class="btn2" data-act="syncnow">🔄 এখনই আপডেট করুন</button>${heavy ? `<button class="btn2" data-act="migimgs">☁ পুরনো ${bn(heavy)}টি প্রোডাক্টের ছবি Cloudinary-তে সরান</button>` : ''}</div></div>`;
+}
+async function migrateImages() {
+  const todo = D.products.filter(p => (p.images || []).some(isData));
+  if (!todo.length) return toast('সব ছবি আগে থেকেই লিংকে আছে ✅');
+  if (!confirm(bn(todo.length) + 'টি প্রোডাক্টের পুরনো ছবি Cloudinary-তে সরানো হবে। পেজ বন্ধ করবেন না। শুরু করবেন?')) return;
+  let done = 0, fail = 0, err = '';
+  for (const p of todo) {
+    try {
+      const imgs = []; for (const src of p.images) imgs.push(isData(src) ? await uploadCld(src) : src);
+      await updateDoc(doc(db, 'products', p.id), { images: imgs }); done++;
+    } catch (e) { fail++; err = e.message; }
+    toast('ছবি সরানো হচ্ছে… ' + bn(done + fail) + '/' + bn(todo.length));
+  }
+  toast(bn(done) + 'টি সরানো হয়েছে ✅' + (fail ? ` · ${bn(fail)}টি হয়নি: ${err}` : ''));
+}
+
 /* ---------- Actions ---------- */
 const A = {
   tab: b => { tab = b.dataset.v; render(); },
@@ -459,6 +548,8 @@ const A = {
     if (d.images.join('').length > 950000) return toast('ছবির সাইজ বেশি, কয়েকটি ছবি বাদ দিন');
     try { form.id ? await updateDoc(doc(db, 'products', form.id), d) : await addDoc(collection(db, 'products'), { ...d, createdAt: serverTimestamp() }); closeModal(); toast('সেভ হয়েছে ✅'); } catch (e) { toast('সেভ হয়নি: ' + e.code); }
   },
+  syncnow: () => { if (!firstLoad.products) return toast('ডাটা লোড হচ্ছে, একটু পরে চেষ্টা করুন'); syncCatalog(true); },
+  migimgs: migrateImages,
   impgo: impRun,
   impsample: impSample,
   order: b => orderModal(D.orders.find(o => o.id === b.dataset.id)),
@@ -508,7 +599,16 @@ document.addEventListener('input', e => {
 });
 document.addEventListener('change', async e => {
   const t = e.target, k = t.dataset.in;
-  if (k === 'pimgs') { for (const f of t.files) { if (form.images.length >= 5) break; try { form.images.push(await fileToData(f)); } catch { toast('ছবি পড়া যায়নি'); } } drawImgs(); t.value = ''; }
+  if (k === 'pimgs') {
+    const files = [...t.files]; t.value = ''; let ok = 0, fail = '';
+    for (const f of files) {
+      if (form.images.length >= 5) break;
+      toast('ছবি আপলোড হচ্ছে… (' + bn(ok + 1) + '/' + bn(Math.min(files.length, 5 - form.images.length + ok)) + ')');
+      try { form.images.push(await uploadCld(f)); ok++; drawImgs(); } catch (er) { fail = er.message; }
+    }
+    drawImgs();
+    toast(fail ? (ok ? bn(ok) + 'টি হয়েছে, বাকিগুলো হয়নি: ' : 'আপলোড হয়নি: ') + fail : bn(ok) + 'টি ছবি আপলোড হয়েছে ✅ (এখন "সেভ করুন" চাপুন)');
+  }
   if (k === 'offimg') { const o = getOff(); for (const f of t.files) { if (o.sec.images.length >= 3) break; try { o.sec.images.push(await fileToData(f, 700, .8)); } catch { toast('ছবি পড়া যায়নি'); } } t.value = ''; render(); }
   if (k === 'badgeimg' && t.files[0]) { try { getOff().badge.image = await fileToPng(t.files[0]); } catch { toast('ছবি পড়া যায়নি'); } t.value = ''; render(); }
   if (k === 'banner' && t.files[0]) { toast('আপলোড হচ্ছে…'); try { await addDoc(collection(db, 'banners'), { image: await fileToData(t.files[0], 1400, .8), link: '', active: true, createdAt: serverTimestamp() }); toast('ব্যানার যোগ হয়েছে ✅'); } catch (er) { toast('আপলোড হয়নি: ' + er.code); } }

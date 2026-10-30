@@ -1476,8 +1476,8 @@ const numId = (fid) => {
   return 1000 + (h % 900000);
 };
 const secOf = (d) => Array.isArray(d.sections) ? d.sections : [d.bestSeller ? 'best' : null, d.group === 'bamboo' ? 'bamboo' : (d.group === 'sandalwood' || (d.cats || [d.cat]).concat(d.featCats || []).some((c) => BASE_SUB_CATS.includes(c))) ? 'sandalwood' : null].filter(Boolean);
-window.azApplyProducts = (docs) => {
-  if (!docs.length) return;                       // এডমিনে এখনো কিছু নেই: বিল্ট-ইন প্রোডাক্টই থাকবে
+window.azApplyProducts = (docs, force) => {
+  if (!docs.length && !force) return;                       // এডমিনে এখনো কিছু নেই: বিল্ট-ইন প্রোডাক্টই থাকবে
   const act = docs.filter((d) => d.active !== false && d.name && +d.offer > 0 && (+d.stock || 0) > 0)
                   .sort((a, b) => numId(a.fid) - numId(b.fid));
   const list = act.map((d) => ({
@@ -1669,7 +1669,18 @@ try {
   window.AZ = { db, collection, doc, getDoc, addDoc, updateDoc, serverTimestamp, increment };
   const quiet = () => {};
   onSnapshot(doc(db, 'settings', 'main'), (s) => window.azApplySettings(s.data() || {}), quiet);
-  onSnapshot(collection(db, 'products'), (s) => window.azApplyProducts(s.docs.map((d) => ({ fid: d.id, ...d.data() }))), quiet);
+  /* প্রোডাক্ট লোড: এডমিন যে "catalog" (কয়েকটি বড় ডকুমেন্ট) বানায় সেটি পড়া হয়, তাই প্রতি ভিজিটে মাত্র কয়েকটি রিড লাগে।
+     catalog না থাকলে বা পড়া না গেলে আগের পদ্ধতিতে (products কালেকশন) নিজে থেকে চালু হয়, তাই সাইট কখনো খালি হবে না। */
+  let legacyOff = null;
+  const startLegacy = () => { if (!legacyOff) legacyOff = onSnapshot(collection(db, 'products'), (s) => window.azApplyProducts(s.docs.map((d) => ({ fid: d.id, ...d.data() }))), quiet); };
+  onSnapshot(collection(db, 'catalog'), (s) => {
+    const meta = s.docs.find((d) => d.id === 'meta')?.data();
+    if (!meta || !(meta.count > 0)) { startLegacy(); return; }
+    const parts = s.docs.filter((d) => /^c\d+$/.test(d.id)).sort((a, b) => +a.id.slice(1) - +b.id.slice(1)).slice(0, meta.count);
+    if (parts.length < meta.count || parts.some((d) => d.data().v !== meta.hash)) return;   // এডমিন আপডেট চলছে: আগের তালিকাই থাকবে, সব অংশ আসলে বদলাবে
+    if (legacyOff) { legacyOff(); legacyOff = null; }
+    window.azApplyProducts(parts.flatMap((d) => d.data().items || []), +meta.total > 0);
+  }, startLegacy);
   onSnapshot(collection(db, 'banners'), (s) => window.azApplyBanners(s.docs.map((d) => d.data())), quiet);
 } catch (e) { console.warn('Firebase unavailable', e); }
 </script>
