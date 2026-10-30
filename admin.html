@@ -164,7 +164,7 @@ async function setCats(p, arr) {
 function vProducts() {
   const q = pSearch.toLowerCase(), list = D.products.filter(p => !q || (p.name + p.cat).toLowerCase().includes(q)).sort((a, b) => (a.name || '').localeCompare(b.name || ''));
   return `<div class="flex gap-2 mb-3"><input class="inp" placeholder="প্রোডাক্ট খুঁজুন…" value="${esc(pSearch)}" data-in="psearch"><button class="btn shrink-0" data-act="pnew">+ নতুন</button></div>
-  <div class="card p-4 mb-3 text-sm"><p class="font-semibold">📥 JSON ফাইল থেকে একসাথে অনেক প্রোডাক্ট ইমপোর্ট করুন</p><p class="text-xs text-black/60 mt-1">${!D.products.length ? 'কোনো প্রোডাক্ট নেই। <b>products-seed.json</b> দিয়ে শুরু করতে পারেন। ' : ''}যে প্রোডাক্টের আইডি আগে থেকেই আছে সেটি বাদ যাবে, তাই কিছু নষ্ট হবে না। ছবি ছাড়া প্রোডাক্টও ইমপোর্ট হয়, পরে এডিট করে ছবি দিতে পারবেন।</p><input type="file" accept=".json,application/json" data-in="seed" class="block mt-2"></div>
+  ${vImport()}
   <div class="grid grid-cols-2 md:grid-cols-4 gap-3">${list.map(p => `<div class="card overflow-hidden ${p.active === false ? 'opacity-50' : ''}">
     <img src="${esc(p.images?.[0] || '')}" class="w-full aspect-[4/5] object-cover bg-gray-100" alt="">
     <div class="p-3 text-sm"><p class="font-semibold leading-snug min-h-[2.6rem]">${esc(p.name)}</p>
@@ -288,6 +288,130 @@ function invoice(o) {
   <p style="margin-top:30px">ধন্যবাদ আপনার অর্ডারের জন্য!</p><script>onload=()=>print()<\/script></body></html>`); w.document.close();
 }
 
+/* ---------- JSON ইমপোর্ট (যোগ / বাদ, ক্যাটাগরি-ওয়াইজ) ---------- */
+let impMode = 'add', impUpdate = false, impPlan = null;
+const impKey = s => String(s ?? '').trim().toLowerCase().replace(/\s+/g, ' ');
+const impDocId = id => { const s = String(id).trim().replace(/\//g, '-'); return /^\d+$/.test(s) ? 'p' + s : s; };
+function vImport() {
+  return `<div class="card p-4 mb-3 text-sm"><p class="font-semibold">📥 JSON ফাইল দিয়ে প্রোডাক্ট যোগ / বাদ দিন</p>
+  <p class="text-xs text-black/60 mt-1">ফাইল বেছে নিলে আগে প্রিভিউ দেখাবে, আপনি "চালু করুন" চাপলে তবেই কাজ হবে। ফাইলে ক্যাটাগরি অনুযায়ী প্রোডাক্ট সাজানো থাকলে প্রতিটি প্রোডাক্ট নিজে থেকে সেই ক্যাটাগরিতে (ও ফিচারড ক্যাটাগরিতে) বসে যাবে। ছবি ছাড়া প্রোডাক্টও ইমপোর্ট হয়।</p>
+  <div class="flex flex-wrap gap-3 mt-3 items-center">
+    <select class="inp !w-auto" data-in="impmode"><option value="add" ${impMode === 'add' ? 'selected' : ''}>➕ যোগ করুন (JSON এর প্রোডাক্ট সাইটে যোগ হবে)</option><option value="remove" ${impMode === 'remove' ? 'selected' : ''}>➖ বাদ দিন (JSON এ থাকা প্রোডাক্ট ডিলিট হবে)</option></select>
+    ${impMode === 'add' ? `<label class="flex items-center gap-2"><input type="checkbox" data-in="impupd" ${impUpdate ? 'checked' : ''}> আগে থেকে থাকলে আপডেট করুন (না চাপলে বাদ যাবে)</label>` : ''}
+  </div>
+  <div class="flex flex-wrap gap-3 mt-3 items-center"><input type="file" accept=".json,application/json" data-in="seed"><button class="btn2" data-act="impsample">⬇ নমুনা JSON নামান</button></div>
+  <details class="mt-3 text-xs text-black/70"><summary class="cursor-pointer font-semibold">যে যে ফরম্যাট চলবে</summary>
+  <pre class="mt-2 p-2 bg-black/5 rounded-lg overflow-x-auto" dir="ltr">1) ক্যাটাগরি-ওয়াইজ:
+{ "Combs": [ { "name": "Wide Teeth Comb", "offer": 250, "regular": 350 } ],
+  "Face":  [ { "name": "Centella Serum", "offer": 900, "stock": 20 } ] }
+
+2) সাধারণ তালিকা (ক্যাটাগরি প্রতিটি প্রোডাক্টে "cat" এ):
+[ { "name": "...", "cat": "Combs", "offer": 250 } ]
+
+3) { "categories": [ { "category": "Lip", "products": [ ... ] } ] }
+
+বাদ দিতে: একই ফরম্যাটে ফাইল দিন ("id" বা "name" মিললে ডিলিট হবে)।
+প্রোডাক্টের ঘর: name*, offer*, regular, stock, desc, brand, images[], active, sections[], bestSeller</pre></details></div>`;
+}
+function impParse(raw) {
+  const out = [];
+  const push = (p, cat) => { if (p && typeof p === 'object' && !Array.isArray(p)) out.push({ p, cat: String(cat ?? p.cat ?? p.category ?? '').trim() }); };
+  const walk = (node, cat) => {
+    if (Array.isArray(node)) node.forEach(x => (x && !Array.isArray(x) && Array.isArray(x.products)) ? walk(x.products, x.category ?? x.cat ?? x.name ?? cat) : push(x, cat));
+    else if (node && typeof node === 'object') {
+      if (Array.isArray(node.products)) walk(node.products, cat);
+      else if (node.categories) walk(node.categories, cat);
+      else Object.entries(node).forEach(([k, v]) => { if (Array.isArray(v)) walk(v, k); else if (v && Array.isArray(v.products)) walk(v.products, k); });
+    }
+  };
+  walk(raw);
+  return out;
+}
+function impBuild(raw) {
+  const rows = impParse(raw), byId = new Map(D.products.map(p => [p.id, p])), byName = new Map(D.products.map(p => [impKey(p.name), p]));
+  const seen = new Map(), items = [], bad = [];
+  rows.forEach(({ p, cat }) => {
+    const name = String(p.name ?? p.title ?? '').trim(), hasId = p.id != null && String(p.id).trim() !== '', cid = hasId ? impDocId(p.id) : null;
+    if (!name && !hasId) return bad.push('নাম/আইডি নেই');
+    if (impMode === 'add' && !name) return bad.push('নাম নেই (আইডি: ' + p.id + ')');
+    const key = cid ? 'i:' + cid : 'n:' + impKey(name), key2 = 'n:' + impKey(name);
+    const dup = seen.get(key) || (name && seen.get(key2));
+    if (dup) { if (cat) dup.cats.add(cat); return; }
+    const ex = (cid && byId.get(cid)) || (name && byName.get(impKey(name))) || null;
+    const it = { p, name: name || ex?.name || cid, cid, ex, cats: new Set(cat ? [cat] : []) };
+    seen.set(key, it); if (name) seen.set(key2, it); items.push(it);
+  });
+  items.forEach(it => {
+    if (impMode === 'remove') it.act = it.ex ? 'delete' : 'missing';
+    else it.act = it.ex ? (impUpdate ? 'update' : 'skip') : 'add';
+  });
+  return { items, bad, total: rows.length };
+}
+const impData = it => {
+  const p = it.p, ex = it.ex, has = k => p[k] !== undefined && p[k] !== null && p[k] !== '', d = {};
+  const cats = [...new Set([...(ex ? catsOf(ex) : []), ...(Array.isArray(p.featCats) ? p.featCats.map(x => String(x).trim()).filter(Boolean) : []), ...it.cats])];
+  const imgs = Array.isArray(p.images) ? p.images.filter(Boolean) : (p.image ? [p.image] : []);
+  if (!ex) {
+    const offer = +p.offer || 0, cat = it.cats.size ? [...it.cats][0] : String(p.cat ?? p.category ?? '').trim();
+    Object.assign(d, { name: it.name, cat, brand: canonBrand(p.brand) || detectBrand(it.name), regular: +p.regular || offer, offer, stock: has('stock') ? +p.stock || 0 : 50, desc: String(p.desc ?? p.description ?? '').trim(), active: p.active !== false, images: imgs });
+    d.featCats = cats.length ? cats : (cat ? [cat] : []);
+    Object.assign(d, secFields(Array.isArray(p.sections) ? p.sections : p.bestSeller ? ['best'] : (p.group === 'sandalwood' || p.group === 'bamboo') ? [p.group] : []));
+    return d;
+  }
+  if (it.name && it.name !== ex.name && has('name')) d.name = it.name;
+  if (has('brand')) d.brand = canonBrand(p.brand);
+  if (has('offer')) d.offer = +p.offer || 0;
+  if (has('regular')) d.regular = +p.regular || 0;
+  if (has('stock')) d.stock = +p.stock || 0;
+  if (has('desc') || has('description')) d.desc = String(p.desc ?? p.description).trim();
+  if (p.active !== undefined) d.active = p.active !== false;
+  if (imgs.length) d.images = imgs;
+  if (!ex.cat && (it.cats.size || has('cat'))) d.cat = it.cats.size ? [...it.cats][0] : String(p.cat).trim();
+  else if (has('cat') && !it.cats.size) d.cat = String(p.cat).trim();
+  d.featCats = cats;
+  if (Array.isArray(p.sections) || p.bestSeller !== undefined || p.group) Object.assign(d, secFields(Array.isArray(p.sections) ? p.sections : p.bestSeller ? ['best'] : (p.group === 'sandalwood' || p.group === 'bamboo') ? [p.group] : []));
+  return d;
+};
+async function impStart(file) {
+  if (!file) return;
+  let raw; try { raw = JSON.parse(await file.text()); } catch { return toast('ফাইলটি সঠিক JSON নয়'); }
+  const plan = impBuild(raw); impPlan = plan;
+  const n = a => plan.items.filter(i => i.act === a).length, list = a => plan.items.filter(i => i.act === a).slice(0, 6).map(i => esc(i.name)).join(', ');
+  const catMap = {}; plan.items.filter(i => ['add', 'update'].includes(i.act)).forEach(i => (i.cats.size ? [...i.cats] : [String(i.p.cat ?? '').trim() || 'ক্যাটাগরি ছাড়া']).forEach(c => catMap[c] = (catMap[c] || 0) + 1));
+  const row = (c, t, l, cls = '') => c ? `<div class="py-2 border-b ${cls}"><b>${bn(c)}টি ${t}</b>${l ? `<p class="text-xs text-black/60 mt-0.5">${l}${c > 6 ? ' …' : ''}</p>` : ''}</div>` : '';
+  const todo = n('add') + n('update') + n('delete');
+  openModal(`<h2 class="font-bold text-lg mb-1">ইমপোর্ট প্রিভিউ</h2><p class="text-xs text-black/60 mb-2">${esc(file.name)} · ফাইলে মোট ${bn(plan.total)}টি প্রোডাক্ট পাওয়া গেছে</p>
+  <div class="text-sm">${impMode === 'add' ? row(n('add'), 'নতুন যোগ হবে', list('add')) + row(n('update'), 'আপডেট হবে', list('update')) + row(n('skip'), 'আগে থেকেই আছে, বাদ যাবে', list('skip'), 'text-black/60') : row(n('delete'), 'ডিলিট হবে', list('delete'), 'red') + row(n('missing'), 'সাইটে পাওয়া যায়নি, বাদ যাবে', list('missing'), 'text-black/60')}
+  ${plan.bad.length ? row(plan.bad.length, 'বাদ (নাম নেই)', '', 'red') : ''}
+  ${Object.keys(catMap).length ? `<p class="font-semibold mt-3 mb-1">ক্যাটাগরি অনুযায়ী</p><div class="flex flex-wrap gap-1.5">${Object.entries(catMap).map(([c, k]) => `<span class="px-2 py-0.5 rounded-full bg-black/10 text-xs font-semibold">${esc(c)} · ${bn(k)}</span>`).join('')}</div>` : ''}</div>
+  <div class="flex gap-2 mt-4">${todo ? `<button class="btn flex-1" data-act="impgo">${impMode === 'add' ? '✅ চালু করুন' : '🗑 ডিলিট করুন'} (${bn(todo)}টি)</button>` : ''}<button class="btn2 ${todo ? '' : 'flex-1'}" data-act="close">${todo ? 'বাতিল' : 'কিছু করার নেই — বন্ধ করুন'}</button></div>`);
+}
+async function impRun() {
+  const plan = impPlan; if (!plan) return;
+  const work = plan.items.filter(i => ['add', 'update', 'delete'].includes(i.act)); if (!work.length) return;
+  if (impMode === 'remove' && !confirm(bn(work.length) + 'টি প্রোডাক্ট পুরোপুরি ডিলিট হবে। নিশ্চিত?')) return;
+  closeModal(); let done = 0;
+  try {
+    for (let i = 0; i < work.length; i += impMode === 'remove' ? 400 : 5) {
+      const b = writeBatch(db), part = work.slice(i, i + (impMode === 'remove' ? 400 : 5));
+      part.forEach(it => {
+        if (it.act === 'delete') b.delete(doc(db, 'products', it.ex.id));
+        else if (it.act === 'update') b.set(doc(db, 'products', it.ex.id), impData(it), { merge: true });
+        else b.set(it.cid ? doc(db, 'products', it.cid) : doc(collection(db, 'products')), { ...impData(it), createdAt: serverTimestamp() });
+      });
+      await b.commit(); done += part.length; toast('চলছে… ' + bn(done) + '/' + bn(work.length));
+    }
+    toast(bn(done) + (impMode === 'remove' ? 'টি প্রোডাক্ট ডিলিট হয়েছে ✅' : 'টি প্রোডাক্ট যোগ/আপডেট হয়েছে ✅'));
+  } catch (er) { toast('সম্পূর্ণ হয়নি (' + bn(done) + 'টি হয়েছে): ' + (er.code || er.message)); }
+  impPlan = null;
+}
+function impSample() {
+  const s = { 'Combs': [{ name: 'Golden Sandalwood Wide Teeth Comb', regular: 350, offer: 250, stock: 30, desc: 'Wide-tooth comb', images: [], sections: ['sandalwood'] }],
+    'Face': [{ name: 'Centella Brightening Serum', regular: 1200, offer: 950, stock: 20, desc: 'Daily serum' }, { name: 'Raip R3 Face Wash', offer: 450 }],
+    'Lip': [{ name: 'Skino Lip Balm', regular: 300, offer: 220, stock: 40 }] };
+  const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([JSON.stringify(s, null, 2)], { type: 'application/json' })); a.download = 'products-sample.json'; a.click(); setTimeout(() => URL.revokeObjectURL(a.href), 2000);
+}
+
 /* ---------- Actions ---------- */
 const A = {
   tab: b => { tab = b.dataset.v; render(); },
@@ -335,6 +459,8 @@ const A = {
     if (d.images.join('').length > 950000) return toast('ছবির সাইজ বেশি, কয়েকটি ছবি বাদ দিন');
     try { form.id ? await updateDoc(doc(db, 'products', form.id), d) : await addDoc(collection(db, 'products'), { ...d, createdAt: serverTimestamp() }); closeModal(); toast('সেভ হয়েছে ✅'); } catch (e) { toast('সেভ হয়নি: ' + e.code); }
   },
+  impgo: impRun,
+  impsample: impSample,
   order: b => orderModal(D.orders.find(o => o.id === b.dataset.id)),
   ofilter: b => { oFilter = b.dataset.v; render(); },
   custorders: b => { oSearch = b.dataset.v; oFilter = 'all'; tab = 'orders'; render(); },
@@ -388,30 +514,9 @@ document.addEventListener('change', async e => {
   if (k === 'banner' && t.files[0]) { toast('আপলোড হচ্ছে…'); try { await addDoc(collection(db, 'banners'), { image: await fileToData(t.files[0], 1400, .8), link: '', active: true, createdAt: serverTimestamp() }); toast('ব্যানার যোগ হয়েছে ✅'); } catch (er) { toast('আপলোড হয়নি: ' + er.code); } }
   if (k === 'popup' && t.files[0]) { toast('আপলোড হচ্ছে…'); try { await addDoc(collection(db, 'banners'), { image: await fileToData(t.files[0], 1000, .82), kind: 'popup', link: '', active: true, createdAt: serverTimestamp() }); toast('পপআপ এড যোগ হয়েছে ✅'); } catch (er) { toast('আপলোড হয়নি: ' + er.code); } }
   if (k === 'blink') updateDoc(doc(db, 'banners', t.dataset.id), { link: t.value.trim() });
-  if (k === 'seed' && t.files[0]) {
-    try {
-      let arr = JSON.parse(await t.files[0].text()); if (!Array.isArray(arr)) arr = arr.products;
-      if (!Array.isArray(arr)) throw new Error('ফাইলের ফরম্যাট ঠিক নেই');
-      const have = new Set(D.products.map(x => x.id)), skip = arr.filter(x => x && have.has('p' + x.id)).length;
-      arr = arr.filter(x => x && x.id != null && x.name && !have.has('p' + x.id));
-      if (!arr.length) { toast(skip ? 'সব প্রোডাক্ট আগে থেকেই আছে' : 'ফাইলে কোনো প্রোডাক্ট পাওয়া যায়নি'); t.value = ''; return; }
-      toast('ইমপোর্ট হচ্ছে… (' + bn(arr.length) + 'টি)');
-      for (let i = 0; i < arr.length; i += 5) {
-        const b = writeBatch(db);
-        arr.slice(i, i + 5).forEach(p => {
-          const { id, sourceUrl, ...rest } = p;
-          if (!Array.isArray(rest.sections)) Object.assign(rest, secFields(rest.bestSeller ? ['best'] : (rest.group === 'sandalwood' || rest.group === 'bamboo') ? [rest.group] : []));
-          if (!Array.isArray(rest.featCats) && rest.cat) rest.featCats = [rest.cat];
-          if (!rest.brand) rest.brand = detectBrand(rest.name);
-          rest.regular = +rest.regular || +rest.offer || 0; rest.offer = +rest.offer || 0; rest.stock = rest.stock ?? 50; rest.images = rest.images || [];
-          b.set(doc(db, 'products', 'p' + id), { ...rest, createdAt: serverTimestamp() });
-        });
-        await b.commit();
-      }
-      toast(`${bn(arr.length)}টি প্রোডাক্ট ইমপোর্ট হয়েছে ✅` + (skip ? ` (${bn(skip)}টি আগে থেকেই ছিল)` : ''));
-    } catch (er) { toast('ইমপোর্ট হয়নি: ' + (er.code || er.message)); }
-    t.value = '';
-  }
+  if (k === 'seed') { const f = t.files[0]; t.value = ''; impStart(f); }
+  if (k === 'impmode') { impMode = t.value; render(); }
+  if (k === 'impupd') impUpdate = t.checked;
 });
 </script>
 </body>
