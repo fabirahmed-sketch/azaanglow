@@ -115,7 +115,8 @@ function vDash() {
 }
 /* ---------- ওয়েবসাইটের ফিচারড সেকশন ---------- */
 const SECTIONS = [['best', '★ বেস্ট সেলিং প্রোডাক্টস', '★ বেস্ট'], ['sandalwood', 'চন্দন কালেকশন (Sandalwood)', 'চন্দন'], ['bamboo', 'বাম্বু কালেকশন (Bamboo Wood)', 'বাম্বু']];
-const secOf = p => Array.isArray(p.sections) ? p.sections : [p.bestSeller ? 'best' : null, p.group === 'bamboo' ? 'bamboo' : 'sandalwood'].filter(Boolean);
+const HAIR_CATS = ['Hair Brushes', 'Combs', 'Massagers'];
+const secOf = p => Array.isArray(p.sections) ? p.sections : [p.bestSeller ? 'best' : null, p.group === 'bamboo' ? 'bamboo' : (p.group === 'sandalwood' || [p.cat, ...(p.featCats || [])].some(c => HAIR_CATS.includes(c))) ? 'sandalwood' : null].filter(Boolean);
 const secFields = arr => ({ sections: arr, bestSeller: arr.includes('best'), group: arr.includes('sandalwood') ? 'sandalwood' : arr.includes('bamboo') ? 'bamboo' : 'other' });
 const hideNote = p => (p.active === false ? 'লুকানো' : (+p.stock || 0) <= 0 ? 'স্টক শেষ' : '');
 function vSections() {
@@ -163,14 +164,14 @@ async function setCats(p, arr) {
 function vProducts() {
   const q = pSearch.toLowerCase(), list = D.products.filter(p => !q || (p.name + p.cat).toLowerCase().includes(q)).sort((a, b) => (a.name || '').localeCompare(b.name || ''));
   return `<div class="flex gap-2 mb-3"><input class="inp" placeholder="প্রোডাক্ট খুঁজুন…" value="${esc(pSearch)}" data-in="psearch"><button class="btn shrink-0" data-act="pnew">+ নতুন</button></div>
-  ${!D.products.length ? `<div class="card p-4 mb-3 text-sm">কোনো প্রোডাক্ট নেই। আপনার বর্তমান ২০টি প্রোডাক্ট একবারে আনতে <b>products-seed.json</b> ফাইলটি নির্বাচন করুন: <input type="file" accept=".json" data-in="seed" class="block mt-2"></div>` : ''}
+  <div class="card p-4 mb-3 text-sm"><p class="font-semibold">📥 JSON ফাইল থেকে একসাথে অনেক প্রোডাক্ট ইমপোর্ট করুন</p><p class="text-xs text-black/60 mt-1">${!D.products.length ? 'কোনো প্রোডাক্ট নেই। <b>products-seed.json</b> দিয়ে শুরু করতে পারেন। ' : ''}যে প্রোডাক্টের আইডি আগে থেকেই আছে সেটি বাদ যাবে, তাই কিছু নষ্ট হবে না। ছবি ছাড়া প্রোডাক্টও ইমপোর্ট হয়, পরে এডিট করে ছবি দিতে পারবেন।</p><input type="file" accept=".json,application/json" data-in="seed" class="block mt-2"></div>
   <div class="grid grid-cols-2 md:grid-cols-4 gap-3">${list.map(p => `<div class="card overflow-hidden ${p.active === false ? 'opacity-50' : ''}">
     <img src="${esc(p.images?.[0] || '')}" class="w-full aspect-[4/5] object-cover bg-gray-100" alt="">
     <div class="p-3 text-sm"><p class="font-semibold leading-snug min-h-[2.6rem]">${esc(p.name)}</p>
     ${p.brand ? `<p class="text-xs text-black/60">ব্র্যান্ড: <b>${esc(p.brand)}</b></p>` : ''}
     <p class="mt-1"><b>${tk(p.offer)}</b> <s class="text-black/40">${tk(p.regular)}</s></p>
     <p class="text-xs ${+p.stock <= 5 ? 'red font-bold' : 'text-black/60'}">স্টক: ${bn(+p.stock || 0)}${p.active === false ? ' · লুকানো' : ''}</p>
-    <p class="text-xs mt-0.5 ${secOf(p).length ? 'text-black/60' : 'red font-bold'}">${secOf(p).length ? 'সেকশন: ' + SECTIONS.filter(s => secOf(p).includes(s[0])).map(s => s[2]).join(' · ') : 'কোনো সেকশনে নেই'}</p>
+    <p class="text-xs mt-0.5 text-black/60">${secOf(p).length ? 'সেকশন: ' + SECTIONS.filter(s => secOf(p).includes(s[0])).map(s => s[2]).join(' · ') : 'সেকশন: নেই (More Products এ দেখাবে)'}</p>
     <div class="flex gap-2 mt-2"><button class="btn2 flex-1" data-act="pedit" data-id="${p.id}">এডিট</button><button class="btn2 red" data-act="pdel" data-id="${p.id}">✕</button></div></div></div>`).join('')}</div>`;
 }
 function vOrders() {
@@ -389,10 +390,27 @@ document.addEventListener('change', async e => {
   if (k === 'blink') updateDoc(doc(db, 'banners', t.dataset.id), { link: t.value.trim() });
   if (k === 'seed' && t.files[0]) {
     try {
-      const arr = JSON.parse(await t.files[0].text()); toast('ইমপোর্ট হচ্ছে…');
-      for (let i = 0; i < arr.length; i += 5) { const b = writeBatch(db); arr.slice(i, i + 5).forEach(p => { const { id, ...rest } = p; b.set(doc(db, 'products', 'p' + id), { ...rest, createdAt: serverTimestamp() }); }); await b.commit(); }
-      toast(`${bn(arr.length)}টি প্রোডাক্ট ইমপোর্ট হয়েছে ✅`);
+      let arr = JSON.parse(await t.files[0].text()); if (!Array.isArray(arr)) arr = arr.products;
+      if (!Array.isArray(arr)) throw new Error('ফাইলের ফরম্যাট ঠিক নেই');
+      const have = new Set(D.products.map(x => x.id)), skip = arr.filter(x => x && have.has('p' + x.id)).length;
+      arr = arr.filter(x => x && x.id != null && x.name && !have.has('p' + x.id));
+      if (!arr.length) { toast(skip ? 'সব প্রোডাক্ট আগে থেকেই আছে' : 'ফাইলে কোনো প্রোডাক্ট পাওয়া যায়নি'); t.value = ''; return; }
+      toast('ইমপোর্ট হচ্ছে… (' + bn(arr.length) + 'টি)');
+      for (let i = 0; i < arr.length; i += 5) {
+        const b = writeBatch(db);
+        arr.slice(i, i + 5).forEach(p => {
+          const { id, sourceUrl, ...rest } = p;
+          if (!Array.isArray(rest.sections)) Object.assign(rest, secFields(rest.bestSeller ? ['best'] : (rest.group === 'sandalwood' || rest.group === 'bamboo') ? [rest.group] : []));
+          if (!Array.isArray(rest.featCats) && rest.cat) rest.featCats = [rest.cat];
+          if (!rest.brand) rest.brand = detectBrand(rest.name);
+          rest.regular = +rest.regular || +rest.offer || 0; rest.offer = +rest.offer || 0; rest.stock = rest.stock ?? 50; rest.images = rest.images || [];
+          b.set(doc(db, 'products', 'p' + id), { ...rest, createdAt: serverTimestamp() });
+        });
+        await b.commit();
+      }
+      toast(`${bn(arr.length)}টি প্রোডাক্ট ইমপোর্ট হয়েছে ✅` + (skip ? ` (${bn(skip)}টি আগে থেকেই ছিল)` : ''));
     } catch (er) { toast('ইমপোর্ট হয়নি: ' + (er.code || er.message)); }
+    t.value = '';
   }
 });
 </script>
