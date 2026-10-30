@@ -56,7 +56,7 @@ const dt = t => t?.toDate ? t.toDate().toLocaleString('bn-BD', {dateStyle:'mediu
 const toast = m => { const t = $('#toast'); t.textContent = m; t.classList.remove('hidden'); clearTimeout(toast.t); toast.t = setTimeout(() => t.classList.add('hidden'), 2500); };
 const ST = { pending:['পেন্ডিং','bg-yellow-100 text-yellow-800'], confirmed:['কনফার্ম','bg-blue-100 text-blue-800'], shipped:['শিপড','bg-purple-100 text-purple-800'], delivered:['ডেলিভারড','bg-green-100 text-green-800'], cancelled:['ক্যান্সেল','bg-red-100 text-red-800'] };
 const badge = s => `<span class="px-2 py-0.5 rounded-full text-xs font-bold ${ST[s]?.[1] || ''}">${ST[s]?.[0] || s}</span>`;
-const TABS = [['dash','ড্যাশবোর্ড'],['products','প্রোডাক্ট'],['sections','ফিচারড সেকশন ও ক্যাটাগরি'],['orders','অর্ডার'],['customers','কাস্টমার'],['promos','প্রমো কোড'],['banners','ব্যানার'],['popups','পপআপ এড'],['settings','সেটিংস']];
+const TABS = [['dash','ড্যাশবোর্ড'],['products','প্রোডাক্ট'],['sections','ফিচারড সেকশন ও ক্যাটাগরি'],['orders','অর্ডার'],['customers','কাস্টমার'],['promos','প্রমো কোড'],['banners','ব্যানার'],['offers','অফার আইকন'],['popups','পপআপ এড'],['settings','সেটিংস']];
 
 const D = { products:[], orders:[], promos:[], banners:[], settings:{} };
 let tab = 'dash', oFilter = 'all', oSearch = '', pSearch = '', form = {}, soundOn = false, firstLoad = {}, unsubs = [];
@@ -98,7 +98,7 @@ $('#modal').addEventListener('mousedown', e => { if (e.target.id === 'modal') cl
 /* ---------- Views ---------- */
 function render() {
   $('#tabs').innerHTML = TABS.map(([k, n]) => `<button data-act="tab" data-v="${k}" class="tab shrink-0 px-3 py-1.5 rounded-full border bg-white ${tab === k ? 'on' : ''}">${n}${k === 'orders' && D.orders.filter(o => o.status === 'pending').length ? ` (${bn(D.orders.filter(o => o.status === 'pending').length)})` : ''}</button>`).join('');
-  $('#view').innerHTML = ({ dash: vDash, products: vProducts, sections: vSections, orders: vOrders, customers: vCustomers, promos: vPromos, banners: vBanners, popups: vPopups, settings: vSettings })[tab]();
+  $('#view').innerHTML = ({ dash: vDash, products: vProducts, sections: vSections, orders: vOrders, customers: vCustomers, promos: vPromos, banners: vBanners, offers: vOffers, popups: vPopups, settings: vSettings })[tab]();
 }
 function vDash() {
   const today = new Date().toDateString(), live = D.orders.filter(o => o.status !== 'cancelled');
@@ -200,6 +200,30 @@ function vPopups() {
   return `<div class="card p-4 mb-3"><h3 class="font-bold mb-2">নতুন পপআপ এড ছবি (প্রস্তাবিত ৮০০×১০০০ বা বর্গাকার)</h3><input type="file" accept="image/*" data-in="popup"><p class="text-xs text-black/50 mt-1">ছবি বেছে নিলেই আপলোড হবে। সাইটে ঢুকলেই এই ছবিগুলো পপআপে দেখাবে (একাধিক হলে নিজে নিজে ঘুরবে), প্রতি ভিজিটরকে প্রতি সেশনে একবার। লিংক দিলে ছবিতে ক্লিক করলে সেখানে যাবে।</p></div>
   <div class="grid md:grid-cols-2 gap-3">${D.banners.filter(b => b.kind === 'popup').map(b => `<div class="card overflow-hidden ${b.active === false ? 'opacity-50' : ''}"><img src="${esc(b.image)}" class="w-full" alt=""><div class="p-3 flex flex-wrap gap-2 items-center"><input class="inp flex-1" placeholder="লিংক (ঐচ্ছিক)" value="${esc(b.link || '')}" data-in="blink" data-id="${b.id}"><button class="btn2" data-act="btoggle" data-id="${b.id}">${b.active === false ? 'চালু করুন' : 'বন্ধ করুন'}</button><button class="btn2 red" data-act="bdel" data-id="${b.id}">✕</button></div></div>`).join('')}</div>`;
 }
+/* ---------- অফার আইকন / অফার সেকশন ---------- */
+let offDraft = null;
+const getOff = () => offDraft ||= (() => { const s = D.settings; return { sec: { on: true, tag: '', title: '', desc: '', btn: '', link: '', images: [], ...(s.offerSec || {}) }, badge: { on: true, text: '', sub: '', image: '', ...(s.offerBadge || {}) }, showDisc: s.showDisc !== false }; })();
+const fileToPng = (f, max = 160) => new Promise((ok, no) => { const r = new FileReader(); r.onload = () => { const im = new Image(); im.onload = () => { const k = Math.min(1, max / Math.max(im.width, im.height)), c = document.createElement('canvas'); c.width = Math.max(1, im.width * k); c.height = Math.max(1, im.height * k); c.getContext('2d').drawImage(im, 0, 0, c.width, c.height); ok(c.toDataURL('image/png')); }; im.onerror = no; im.src = r.result; }; r.onerror = no; r.readAsDataURL(f); });
+function vOffers() {
+  const o = getOff(), sec = o.sec, bd = o.badge;
+  const t = (path, label, val, ph = '') => `<label class="block text-sm font-semibold">${label}<input class="inp mt-1 font-normal" data-off="${path}" value="${esc(val)}" placeholder="${esc(ph)}"></label>`;
+  return `<p class="text-xs text-black/60 mb-3">এখান থেকে ওয়েবসাইটের অফার অংশগুলো নিয়ন্ত্রণ করুন। কোনো ঘর ফাঁকা রাখলে সাইটের আগের ডিফল্ট লেখা/ছবি দেখাবে। পরিবর্তনের পর নিচের "সেভ করুন" চাপুন।</p>
+  <div class="card p-4 space-y-3 max-w-xl"><h3 class="font-bold">অফার সেকশন (কালো ব্যানার)</h3>
+    <label class="flex items-center gap-2 text-sm"><input type="checkbox" data-off="sec.on" ${sec.on !== false ? 'checked' : ''}> সাইটে অফার সেকশন দেখান</label>
+    ${t('sec.tag', 'ছোট লেখা (উপরে)', sec.tag, 'Limited time offer')}
+    <label class="block text-sm font-semibold">শিরোনাম <span class="text-xs font-normal text-black/50">(নতুন লাইনে লিখলে লাইন ভাঙবে)</span><textarea rows="2" class="inp mt-1 font-normal" data-off="sec.title" placeholder="Hair brushes, combs & massagers: save up to 38%">${esc(sec.title)}</textarea></label>
+    <label class="block text-sm font-semibold">বিবরণ<textarea rows="2" class="inp mt-1 font-normal" data-off="sec.desc" placeholder="Sandalwood and bamboo wood tools at special offer prices.">${esc(sec.desc)}</textarea></label>
+    <div class="grid grid-cols-2 gap-3">${t('sec.btn', 'বাটনের লেখা', sec.btn, 'Shop the offer')}${t('sec.link', 'বাটনের লিংক', sec.link, '#haircare বা https://…')}</div>
+    <div><p class="text-sm font-semibold mb-1">অফারের ছবি (সর্বোচ্চ ৩টি)</p><div class="flex gap-2 flex-wrap">${sec.images.map((src, i) => `<div class="relative"><img src="${src}" class="w-20 h-24 object-cover rounded-lg border"><button data-act="offrm" data-i="${i}" class="absolute -top-2 -right-2 bg-red-600 text-white rounded-full w-5 h-5 text-xs">✕</button></div>`).join('') || '<span class="text-xs text-black/50">কোনো ছবি নেই — ডিফল্ট ছবি দেখাচ্ছে</span>'}</div>
+    <input type="file" accept="image/*" multiple data-in="offimg" class="mt-2 text-sm"></div></div>
+  <div class="card p-4 space-y-3 max-w-xl mt-3"><h3 class="font-bold">অফার আইকন/ব্যাজ (প্রথম স্লাইডের "Up to 38% OFF")</h3>
+    <label class="flex items-center gap-2 text-sm"><input type="checkbox" data-off="badge.on" ${bd.on !== false ? 'checked' : ''}> ব্যাজটি দেখান</label>
+    <div class="grid grid-cols-2 gap-3">${t('badge.text', 'মূল লেখা', bd.text, 'Up to 38% OFF')}${t('badge.sub', 'নিচের লেখা', bd.sub, 'Launch offer')}</div>
+    <div><p class="text-sm font-semibold mb-1">আইকন ছবি (ঐচ্ছিক, ছোট ছবি ভালো)</p>${bd.image ? `<div class="relative inline-block bg-black rounded-lg p-2"><img src="${bd.image}" class="w-12 h-12 object-contain"><button data-act="badgerm" class="absolute -top-2 -right-2 bg-red-600 text-white rounded-full w-5 h-5 text-xs">✕</button></div>` : '<span class="text-xs text-black/50">কোনো আইকন নেই</span>'}
+    <input type="file" accept="image/*" data-in="badgeimg" class="block mt-2 text-sm"></div>
+    <label class="flex items-center gap-2 text-sm pt-2 border-t"><input type="checkbox" data-off="showDisc" ${o.showDisc !== false ? 'checked' : ''}> প্রোডাক্ট কার্ডের ছবিতে ছাড়ের ব্যাজ (যেমন -৩৩%) দেখান</label></div>
+  <div class="flex gap-2 max-w-xl mt-3"><button class="btn flex-1" data-act="offsave">সেভ করুন</button><button class="btn2 red" data-act="offreset">ডিফল্টে ফিরুন</button></div>`;
+}
 function vSettings() {
   const s = D.settings, f = (k, l, t = 'text', d = '') => `<label class="block text-sm font-semibold">${l}<input class="inp mt-1 font-normal" type="${t}" data-s="${k}" value="${esc(s[k] ?? d)}"></label>`;
   return `<div class="card p-4 space-y-3 max-w-xl"><h3 class="font-bold">ডেলিভারি চার্জ</h3>
@@ -283,6 +307,16 @@ const A = {
     try { await setDoc(doc(db, 'settings', 'main'), { customCats: [...customCats(), n] }, { merge: true }); toast('ক্যাটাগরি যোগ হয়েছে ✅ এখন প্রোডাক্ট যোগ করুন'); } catch (e) { toast('যোগ হয়নি: ' + e.code); }
   },
   catdelete: async b => { if (!confirm('এই ক্যাটাগরি মুছবেন?')) return; try { await setDoc(doc(db, 'settings', 'main'), { customCats: customCats().filter(x => x !== b.dataset.cat) }, { merge: true }); toast('মুছে ফেলা হয়েছে'); } catch (e) { toast('মোছা হয়নি: ' + e.code); } },
+  offrm: b => { getOff().sec.images.splice(+b.dataset.i, 1); render(); },
+  badgerm: () => { getOff().badge.image = ''; render(); },
+  offsave: async () => {
+    const o = getOff();
+    try { await setDoc(doc(db, 'settings', 'main'), { offerSec: o.sec, offerBadge: o.badge, showDisc: o.showDisc }, { merge: true }); offDraft = null; toast('অফার সেটিংস সেভ হয়েছে ✅'); } catch (e) { toast('সেভ হয়নি: ' + e.code); }
+  },
+  offreset: async () => {
+    if (!confirm('অফার সেকশন ও ব্যাজ আগের ডিফল্টে ফিরিয়ে নেবেন?')) return;
+    try { await setDoc(doc(db, 'settings', 'main'), { offerSec: {}, offerBadge: {}, showDisc: true }, { merge: true }); await updateDoc(doc(db, 'settings', 'main'), { offerSec: {}, offerBadge: {} }); offDraft = null; render(); toast('ডিফল্টে ফিরেছে ✅'); } catch (e) { toast('হয়নি: ' + e.code); }
+  },
   pickbrand: b => { const f = $('#fBrand'); f.value = b.dataset.brand; f.dataset.auto = ''; },
   pickcat: b => {
     const k = b.dataset.cat; $('#fCat').value = k;
@@ -332,6 +366,12 @@ const A = {
   passchg: async () => { const p = $('#newPass').value; if (p.length < 8) return toast('কমপক্ষে ৮ অক্ষর দিন'); try { await updatePassword(auth.currentUser, p); toast('পাসওয়ার্ড বদলেছে ✅'); $('#newPass').value = ''; } catch { toast('লগআউট করে আবার লগইন করে চেষ্টা করুন'); } }
 };
 document.addEventListener('click', e => { const b = e.target.closest('[data-act]'); if (b && A[b.dataset.act]) A[b.dataset.act](b); });
+const setOffPath = e => {
+  const p = e.target.dataset.off; if (!p) return;
+  const o = getOff(), v = e.target.type === 'checkbox' ? e.target.checked : e.target.value;
+  if (p === 'showDisc') o.showDisc = v; else { const [a, k] = p.split('.'); o[a][k] = v; }
+};
+document.addEventListener('input', setOffPath); document.addEventListener('change', setOffPath);
 document.addEventListener('input', e => {
   const k = e.target.dataset.in;
   if (k === 'pname') { const f = $('#fBrand'); if (f && (!f.value.trim() || f.dataset.auto === '1')) { const b = detectBrand(e.target.value); f.value = b; f.dataset.auto = b ? '1' : ''; } }
@@ -342,6 +382,8 @@ document.addEventListener('input', e => {
 document.addEventListener('change', async e => {
   const t = e.target, k = t.dataset.in;
   if (k === 'pimgs') { for (const f of t.files) { if (form.images.length >= 5) break; try { form.images.push(await fileToData(f)); } catch { toast('ছবি পড়া যায়নি'); } } drawImgs(); t.value = ''; }
+  if (k === 'offimg') { const o = getOff(); for (const f of t.files) { if (o.sec.images.length >= 3) break; try { o.sec.images.push(await fileToData(f, 700, .8)); } catch { toast('ছবি পড়া যায়নি'); } } t.value = ''; render(); }
+  if (k === 'badgeimg' && t.files[0]) { try { getOff().badge.image = await fileToPng(t.files[0]); } catch { toast('ছবি পড়া যায়নি'); } t.value = ''; render(); }
   if (k === 'banner' && t.files[0]) { toast('আপলোড হচ্ছে…'); try { await addDoc(collection(db, 'banners'), { image: await fileToData(t.files[0], 1400, .8), link: '', active: true, createdAt: serverTimestamp() }); toast('ব্যানার যোগ হয়েছে ✅'); } catch (er) { toast('আপলোড হয়নি: ' + er.code); } }
   if (k === 'popup' && t.files[0]) { toast('আপলোড হচ্ছে…'); try { await addDoc(collection(db, 'banners'), { image: await fileToData(t.files[0], 1000, .82), kind: 'popup', link: '', active: true, createdAt: serverTimestamp() }); toast('পপআপ এড যোগ হয়েছে ✅'); } catch (er) { toast('আপলোড হয়নি: ' + er.code); } }
   if (k === 'blink') updateDoc(doc(db, 'banners', t.dataset.id), { link: t.value.trim() });
