@@ -223,6 +223,7 @@ function vOffers() {
   const o = getOff(), sec = o.sec, bd = o.badge;
   const t = (path, label, val, ph = '') => `<label class="block text-sm font-semibold">${label}<input class="inp mt-1 font-normal" data-off="${path}" value="${esc(val)}" placeholder="${esc(ph)}"></label>`;
   return `<p class="text-xs text-black/60 mb-3">এখানে নতুন অফার লিখে সেভ করলে যে-ই নতুন করে সাইটে ঢুকবে তার সামনে পপআপ হয়ে এই অফার দেখাবে (প্রতি ভিজিটে একবার)। শিরোনাম বা ছবি ফাঁকা রাখলে পপআপ আসবে না। কোনো ঘর ফাঁকা রাখলে সাইটের আগের ডিফল্ট লেখা/ছবি দেখাবে। পরিবর্তনের পর নিচের "সেভ করুন" চাপুন।</p>
+  ${heroCard()}
   <div class="card p-4 space-y-3 max-w-xl"><h3 class="font-bold">🎁 অফার পপআপ — নতুন ভিজিটর সাইটে ঢুকলেই সামনে দেখাবে</h3>
     <label class="flex items-center gap-2 text-sm"><input type="checkbox" data-off="sec.on" ${sec.on !== false ? 'checked' : ''}> সাইটে ঢুকলে অফার পপআপ দেখান</label>
     ${t('sec.tag', 'ছোট লেখা (উপরে)', sec.tag, 'Limited time offer')}
@@ -329,7 +330,7 @@ function vImport() {
 }
 function impParse(raw) {
   const out = [];
-  const push = (p, cat) => { if (p && typeof p === 'object' && !Array.isArray(p)) out.push({ p, cat: String(cat ?? p.cat ?? p.category ?? '').trim() }); };
+  const push = (p, cat) => { if (p && typeof p === 'object' && !Array.isArray(p)) out.push({ p, cat: mapCat(String(cat ?? p.cat ?? p.category ?? '').trim()) }); };
   const walk = (node, cat) => {
     if (Array.isArray(node)) node.forEach(x => (x && !Array.isArray(x) && Array.isArray(x.products)) ? walk(x.products, x.category ?? x.cat ?? x.name ?? cat) : push(x, cat));
     else if (node && typeof node === 'object') {
@@ -363,10 +364,10 @@ function impBuild(raw) {
 }
 const impData = it => {
   const p = it.p, ex = it.ex, has = k => p[k] !== undefined && p[k] !== null && p[k] !== '', d = {};
-  const cats = [...new Set([...(ex ? catsOf(ex) : []), ...(Array.isArray(p.featCats) ? p.featCats.map(x => String(x).trim()).filter(Boolean) : []), ...it.cats])];
+  const cats = [...new Set([...(ex ? catsOf(ex) : []), ...(Array.isArray(p.featCats) ? p.featCats.map(x => mapCat(String(x).trim())).filter(Boolean) : []), ...it.cats])];
   const imgs = Array.isArray(p.images) ? p.images.filter(Boolean) : (p.image ? [p.image] : []);
   if (!ex) {
-    const offer = +p.offer || 0, cat = it.cats.size ? [...it.cats][0] : String(p.cat ?? p.category ?? '').trim();
+    const offer = +p.offer || 0, cat = it.cats.size ? [...it.cats][0] : mapCat(String(p.cat ?? p.category ?? '').trim());
     Object.assign(d, { name: it.name, cat, brand: canonBrand(p.brand) || detectBrand(it.name), regular: +p.regular || offer, offer, stock: has('stock') ? +p.stock || 0 : 50, desc: String(p.desc ?? p.description ?? '').trim(), active: p.active !== false, images: imgs });
     d.featCats = cats.length ? cats : (cat ? [cat] : []);
     Object.assign(d, secFields(Array.isArray(p.sections) ? p.sections : p.bestSeller ? ['best'] : (p.group === 'sandalwood' || p.group === 'bamboo') ? [p.group] : []));
@@ -380,8 +381,8 @@ const impData = it => {
   if (has('desc') || has('description')) d.desc = String(p.desc ?? p.description).trim();
   if (p.active !== undefined) d.active = p.active !== false;
   if (imgs.length) d.images = imgs;
-  if (!ex.cat && (it.cats.size || has('cat'))) d.cat = it.cats.size ? [...it.cats][0] : String(p.cat).trim();
-  else if (has('cat') && !it.cats.size) d.cat = String(p.cat).trim();
+  if (!ex.cat && (it.cats.size || has('cat'))) d.cat = it.cats.size ? [...it.cats][0] : mapCat(String(p.cat).trim());
+  else if (has('cat') && !it.cats.size) d.cat = mapCat(String(p.cat).trim());
   d.featCats = cats;
   if (Array.isArray(p.sections) || p.bestSeller !== undefined || p.group) Object.assign(d, secFields(Array.isArray(p.sections) ? p.sections : p.bestSeller ? ['best'] : (p.group === 'sandalwood' || p.group === 'bamboo') ? [p.group] : []));
   return d;
@@ -531,7 +532,7 @@ function vCatBrand() {
     <div class="flex-1 min-w-0"><p class="font-semibold text-sm break-words">${esc(r.name)}</p><p class="text-xs text-black/50">${bn(c)}টি প্রোডাক্ট${r.hidden ? ' · সাইটে লুকানো' : ''}</p>
     <label class="text-xs text-blue-700 font-semibold cursor-pointer">🖼 লোগো বদলান<input type="file" accept="image/*" class="hidden" data-in="brandlogo" data-i="${i}"></label>${r.logo ? ` <button class="text-xs red font-semibold ml-2" data-act="brandlogorm" data-i="${i}">ডিফল্ট লোগো</button>` : ''}</div>
     <div class="flex flex-col gap-1 shrink-0"><button class="btn2 !px-2.5 ${r.hidden ? '' : 'red'}" data-act="brandhide" data-i="${i}">${r.hidden ? 'দেখান' : 'লুকান'}</button>${builtin ? '' : `<button class="btn2 red !px-2.5" data-act="branddel" data-i="${i}">মুছুন</button>`}</div></div>`; }).join('');
-  return `<p class="text-xs text-black/60 mb-3">এখান থেকে ওয়েবসাইটের "Featured Categories" আর "Shop By Brands" এর সিরিয়াল (▲▼), আইকন/লোগো এবং যোগ-বিয়োগ নিয়ন্ত্রণ করুন। "লুকান" চাপলে সাইট থেকে সরে যায়, প্রোডাক্ট ডিলিট হয় না। কোনো ক্যাটাগরিতে প্রোডাক্ট না থাকলে (Coming soon বাদে) সাইটে আগে থেকেই দেখায় না।</p>
+  return `${vMerge()}<p class="text-xs text-black/60 mb-3">এখান থেকে ওয়েবসাইটের "Featured Categories" আর "Shop By Brands" এর সিরিয়াল (▲▼), আইকন/লোগো এবং যোগ-বিয়োগ নিয়ন্ত্রণ করুন। "লুকান" চাপলে সাইট থেকে সরে যায়, প্রোডাক্ট ডিলিট হয় না। কোনো ক্যাটাগরিতে প্রোডাক্ট না থাকলে (Coming soon বাদে) সাইটে আগে থেকেই দেখায় না।</p>
   <div class="grid md:grid-cols-2 gap-3">
   <div class="card p-3"><h3 class="font-bold">ফিচারড ক্যাটাগরি</h3>
     <div class="flex gap-2 my-2"><input id="newCat" class="inp" maxlength="30" placeholder="নতুন ক্যাটাগরি (ইংরেজিতে, যেমন: Hair Oil)"><button class="btn shrink-0" data-act="catnew">+ যোগ</button></div>
@@ -541,6 +542,50 @@ function vCatBrand() {
     <div class="max-h-[70vh] overflow-y-auto">${brands}</div></div></div>`;
 }
 const swapRows = (rows, i, d) => { const j = i + d; if (j < 0 || j >= rows.length) return null; [rows[i], rows[j]] = [rows[j], rows[i]]; return rows; };
+
+/* ---------- সাইটের উপরের স্লাইডারের ছবি ---------- */
+const HERO_SLOTS = [['s1', 'প্রথম স্লাইড (হালকা সবুজ, "New: Organic Sandalwood")', ['মাঝের বড় ছবি', 'বাঁ পাশের ছবি', 'ডান পাশের ছবি']], ['s2', 'দ্বিতীয় স্লাইড (কালো)', ['বাঁয়ের ছবি', 'মাঝের ছবি', 'ডানের ছবি']], ['s3', 'তৃতীয় স্লাইড (সবুজ)', ['বাঁয়ের ছবি', 'মাঝের ছবি', 'ডানের ছবি']]];
+const heroImgs = () => D.settings.heroImgs || {};
+function heroCard() {
+  const h = heroImgs();
+  return `<div class="card p-4 max-w-xl mb-3"><h3 class="font-bold">🖼 সাইটের উপরের স্লাইডারের ছবি</h3>
+  <p class="text-xs text-black/60 mt-1 mb-2">ছবি বেছে নিলেই আপলোড হয়ে সঙ্গে সঙ্গে সাইটে বসে যায় (আলাদা সেভ লাগে না)। না দিলে ডিফল্ট ছবি থাকে। লম্বাটে (৩:৪) ছবি সবচেয়ে ভালো দেখায়।</p>
+  ${HERO_SLOTS.map(([k, n, labels]) => `<p class="font-semibold text-sm mt-3">${n}</p><div class="grid grid-cols-3 gap-2 mt-1">${labels.map((l, i) => { const u = (h[k] || [])[i] || ''; return `<div class="text-center"><div class="aspect-[3/4] rounded-lg border bg-gray-100 overflow-hidden grid place-items-center text-[10px] text-black/50">${u ? `<img src="${esc(u)}" class="w-full h-full object-cover" alt="">` : 'ডিফল্ট'}</div><p class="text-[11px] mt-1">${l}</p><label class="text-xs text-blue-700 font-semibold cursor-pointer">বদলান<input type="file" accept="image/*" class="hidden" data-in="heroimg" data-slide="${k}" data-i="${i}"></label>${u ? ` <button class="text-xs red font-semibold ml-1" data-act="heroimgrm" data-slide="${k}" data-i="${i}" aria-label="ডিফল্ট ছবি">✕</button>` : ''}</div>`; }).join('')}</div>`).join('')}</div>`;
+}
+async function saveHero(k, i, url) {
+  const h = heroImgs(), out = {}; HERO_SLOTS.forEach(([key]) => { out[key] = [0, 1, 2].map(j => (h[key] || [])[j] || ''); });
+  out[k][i] = url;
+  try { await setDoc(doc(db, 'settings', 'main'), { heroImgs: out }, { merge: true }); toast(url ? 'ছবি বসেছে ✅' : 'ডিফল্ট ছবি ফিরেছে ✅'); } catch (e) { toast('সেভ হয়নি: ' + (e.code || e.message)); }
+}
+
+/* ---------- ক্যাটাগরি মার্জ (এক ক্যাটাগরির সব প্রোডাক্ট অন্যটিতে সরানো) ---------- */
+const catAlias = () => D.settings.catAlias || {};
+const mapCat = c => catAlias()[c] || c;
+function vMerge() {
+  const names = catRows().map(r => r.name), al = Object.entries(catAlias());
+  const opt = (sel) => names.map(n => `<option value="${esc(n)}" ${n === sel ? 'selected' : ''}>${esc(n)}</option>`).join('');
+  return `<div class="card p-3 mb-3"><h3 class="font-bold">🔀 ক্যাটাগরি মার্জ</h3>
+  <p class="text-xs text-black/60 mt-1 mb-2">প্রথম ক্যাটাগরির সব প্রোডাক্ট দ্বিতীয়টিতে চলে যাবে, আর প্রথমটি সাইট থেকে লুকিয়ে যাবে। এরপর থেকে JSON ইমপোর্টেও প্রথম নামের প্রোডাক্ট নিজে থেকে দ্বিতীয় ক্যাটাগরিতে বসবে। প্রোডাক্ট ডিলিট হয় না।</p>
+  <div class="grid grid-cols-[1fr_auto_1fr] items-center gap-2"><select id="mgFrom" class="inp">${opt('Hair')}</select><span class="font-bold">→</span><select id="mgTo" class="inp">${opt(names.includes('Haircare') ? 'Haircare' : '')}</select></div>
+  <button class="btn w-full mt-2" data-act="catmerge">মার্জ করুন</button>
+  ${al.length ? `<div class="mt-3 text-xs"><p class="font-semibold mb-1">চালু মার্জ নিয়ম:</p>${al.map(([a, b]) => `<div class="flex items-center justify-between gap-2 py-1 border-b"><span>${esc(a)} → ${esc(b)}</span><button class="red font-semibold" data-act="aliasrm" data-from="${esc(a)}">নিয়মটি তুলুন</button></div>`).join('')}</div>` : ''}</div>`;
+}
+async function mergeCats() {
+  const from = $('#mgFrom').value, to = $('#mgTo').value;
+  if (!from || !to || from === to) return toast('দুটি আলাদা ক্যাটাগরি বেছে নিন');
+  const list = D.products.filter(p => catsOf(p).includes(from) || p.cat === from);
+  if (!confirm(`"${from}" এর ${bn(list.length)}টি প্রোডাক্ট "${to}" ক্যাটাগরিতে যাবে, আর "${from}" সাইট থেকে লুকিয়ে যাবে। নিশ্চিত?`)) return;
+  try {
+    for (let i = 0; i < list.length; i += 400) {
+      const b = writeBatch(db);
+      list.slice(i, i + 400).forEach(p => { const d = { featCats: [...new Set(catsOf(p).map(c => c === from ? to : c))] }; if (p.cat === from) d.cat = to; b.update(doc(db, 'products', p.id), d); });
+      await b.commit(); toast('সরানো হচ্ছে… ' + bn(Math.min(i + 400, list.length)) + '/' + bn(list.length));
+    }
+    const rows = catRows(); rows.forEach(r => { if (r.name === from) r.hidden = true; if (r.name === to) r.hidden = false; });
+    await setDoc(doc(db, 'settings', 'main'), { catAlias: { ...catAlias(), [from]: to }, catCfg: rows.map(r => ({ name: r.name, icon: r.icon || '', hidden: !!r.hidden })) }, { merge: true });
+    toast(bn(list.length) + 'টি প্রোডাক্ট "' + to + '" এ সরানো হয়েছে ✅');
+  } catch (e) { toast('সম্পূর্ণ হয়নি: ' + (e.code || e.message)); }
+}
 
 /* ---------- Actions ---------- */
 const A = {
@@ -601,6 +646,9 @@ const A = {
   brandlogorm: b => { const r = brandRows(); r[+b.dataset.i].logo = ''; saveBrandRows(r); },
   branddel: b => { const r = brandRows(), x = r[+b.dataset.i]; if (!confirm(x.name + ' ব্র্যান্ডটি মুছবেন? (প্রোডাক্ট ডিলিট হবে না)')) return; saveBrandRows(r.filter(y => y !== x)); },
   brandnew: () => { const n = $('#newBrand').value.trim().replace(/\s+/g, ' '); if (!n) return toast('ব্র্যান্ডের নাম লিখুন'); const r = brandRows(); if (r.some(x => x.name.toLowerCase() === n.toLowerCase())) return toast('এই নামে ব্র্যান্ড আগে থেকেই আছে'); r.push({ name: n, aliases: [n.toLowerCase()], logo: '', hidden: false }); saveBrandRows(r); },
+  heroimgrm: b => saveHero(b.dataset.slide, +b.dataset.i, ''),
+  catmerge: mergeCats,
+  aliasrm: async b => { const a = { ...catAlias() }; delete a[b.dataset.from]; try { await setDoc(doc(db, 'settings', 'main'), { catAlias: a }); } catch (e) { return toast('হয়নি: ' + (e.code || e.message)); } toast('নিয়মটি তোলা হয়েছে'); },
   impgo: impRun,
   impsample: impSample,
   order: b => orderModal(D.orders.find(o => o.id === b.dataset.id)),
@@ -667,6 +715,7 @@ document.addEventListener('change', async e => {
   if (k === 'blink') updateDoc(doc(db, 'banners', t.dataset.id), { link: t.value.trim() });
   if (k === 'caticon' && t.files[0]) { const i = +t.dataset.i, f = t.files[0]; t.value = ''; toast('আইকন আপলোড হচ্ছে…'); try { const url = await uploadCld(f, 'f_auto,q_auto,w_240,h_240,c_fill'); const r = catRows(); r[i].icon = url; await saveCatRows(r); } catch (er) { toast('আপলোড হয়নি: ' + er.message); } }
   if (k === 'brandlogo' && t.files[0]) { const i = +t.dataset.i, f = t.files[0]; t.value = ''; toast('লোগো আপলোড হচ্ছে…'); try { const url = await uploadCld(f, 'f_auto,q_auto,w_320,c_fit'); const r = brandRows(); r[i].logo = url; await saveBrandRows(r); } catch (er) { toast('আপলোড হয়নি: ' + er.message); } }
+  if (k === 'heroimg' && t.files[0]) { const sl = t.dataset.slide, i = +t.dataset.i, f = t.files[0]; t.value = ''; toast('ছবি আপলোড হচ্ছে…'); try { await saveHero(sl, i, await uploadCld(f, 'f_auto,q_auto,w_600')); } catch (er) { toast('আপলোড হয়নি: ' + er.message); } }
   if (k === 'seed') { const f = t.files[0]; t.value = ''; impStart(f); }
   if (k === 'impmode') { impMode = t.value; render(); }
   if (k === 'impupd') impUpdate = t.checked;
