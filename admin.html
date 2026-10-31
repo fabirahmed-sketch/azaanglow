@@ -56,7 +56,7 @@ const dt = t => t?.toDate ? t.toDate().toLocaleString('bn-BD', {dateStyle:'mediu
 const toast = m => { const t = $('#toast'); t.textContent = m; t.classList.remove('hidden'); clearTimeout(toast.t); toast.t = setTimeout(() => t.classList.add('hidden'), 2500); };
 const ST = { pending:['পেন্ডিং','bg-yellow-100 text-yellow-800'], confirmed:['কনফার্ম','bg-blue-100 text-blue-800'], shipped:['শিপড','bg-purple-100 text-purple-800'], delivered:['ডেলিভারড','bg-green-100 text-green-800'], cancelled:['ক্যান্সেল','bg-red-100 text-red-800'] };
 const badge = s => `<span class="px-2 py-0.5 rounded-full text-xs font-bold ${ST[s]?.[1] || ''}">${ST[s]?.[0] || s}</span>`;
-const TABS = [['dash','ড্যাশবোর্ড'],['products','প্রোডাক্ট'],['sections','ফিচারড সেকশন ও ক্যাটাগরি'],['orders','অর্ডার'],['customers','কাস্টমার'],['promos','প্রমো কোড'],['banners','ব্যানার'],['offers','অফার আইকন'],['popups','পপআপ এড'],['settings','সেটিংস']];
+const TABS = [['dash','ড্যাশবোর্ড'],['products','প্রোডাক্ট'],['sections','ফিচারড সেকশন ও ক্যাটাগরি'],['catbrand','ক্যাটাগরি ও ব্র্যান্ড সাজান'],['orders','অর্ডার'],['customers','কাস্টমার'],['promos','প্রমো কোড'],['banners','ব্যানার'],['offers','অফার ও আইকন'],['popups','পপআপ এড'],['settings','সেটিংস']];
 
 const D = { products:[], orders:[], promos:[], banners:[], settings:{} };
 let tab = 'dash', oFilter = 'all', oSearch = '', pSearch = '', form = {}, soundOn = false, firstLoad = {}, unsubs = [];
@@ -80,7 +80,7 @@ function listen(name, ord) {
     firstLoad[name] = true; if (name === 'products') { hadProducts ||= D.products.length > 0; schedSync(); } render();
   }, err => toast('ডাটা লোড হয়নি: ' + err.code)));
 }
-function listenSettings() { unsubs.push(onSnapshot(doc(db, 'settings', 'main'), s => { D.settings = s.data() || {}; render(); })); }
+function listenSettings() { unsubs.push(onSnapshot(doc(db, 'settings', 'main'), s => { D.settings = s.data() || {}; syncBrands(); render(); })); }
 function beep() { try { const c = new AudioContext(), o = c.createOscillator(); o.connect(c.destination); o.frequency.value = 880; o.start(); setTimeout(() => { o.stop(); c.close(); }, 350); } catch {} }
 
 /* ---------- Image helper (ছবি ছোট করে Firestore এ রাখা হয়, আলাদা স্টোরেজ লাগে না) ---------- */
@@ -97,11 +97,11 @@ const toBlob = (f, max = 1200, q = .85) => new Promise((ok, no) => {
   r.onload = () => { const im = new Image(); im.onload = () => { const k = Math.min(1, max / Math.max(im.width, im.height)), c = document.createElement('canvas'); c.width = Math.round(im.width * k); c.height = Math.round(im.height * k); c.getContext('2d').drawImage(im, 0, 0, c.width, c.height); c.toBlob(b => b ? ok(b) : no(new Error('blob')), 'image/jpeg', q); }; im.onerror = no; im.src = r.result; };
   r.onerror = no; r.readAsDataURL(f);
 });
-async function uploadCld(file) {
+async function uploadCld(file, tf = 'f_auto,q_auto,w_800') {
   const fd = new FormData(); fd.append('file', typeof file === 'string' ? file : await toBlob(file)); fd.append('upload_preset', CLD.preset);
   const res = await fetch(`https://api.cloudinary.com/v1_1/${CLD.cloud}/image/upload`, { method: 'POST', body: fd });
   const j = await res.json(); if (!res.ok || !j.secure_url) throw new Error(j.error?.message || 'upload failed');
-  return j.secure_url.replace('/upload/', '/upload/f_auto,q_auto,w_800/');
+  return j.secure_url.replace('/upload/', '/upload/' + tf + '/');
 }
 
 /* ---------- Modal ---------- */
@@ -112,7 +112,7 @@ $('#modal').addEventListener('mousedown', e => { if (e.target.id === 'modal') cl
 /* ---------- Views ---------- */
 function render() {
   $('#tabs').innerHTML = TABS.map(([k, n]) => `<button data-act="tab" data-v="${k}" class="tab shrink-0 px-3 py-1.5 rounded-full border bg-white ${tab === k ? 'on' : ''}">${n}${k === 'orders' && D.orders.filter(o => o.status === 'pending').length ? ` (${bn(D.orders.filter(o => o.status === 'pending').length)})` : ''}</button>`).join('');
-  $('#view').innerHTML = ({ dash: vDash, products: vProducts, sections: vSections, orders: vOrders, customers: vCustomers, promos: vPromos, banners: vBanners, offers: vOffers, popups: vPopups, settings: vSettings })[tab]();
+  $('#view').innerHTML = ({ dash: vDash, products: vProducts, sections: vSections, catbrand: vCatBrand, orders: vOrders, customers: vCustomers, promos: vPromos, banners: vBanners, offers: vOffers, popups: vPopups, settings: vSettings })[tab]();
 }
 function vDash() {
   const today = new Date().toDateString(), live = D.orders.filter(o => o.status !== 'cancelled');
@@ -222,9 +222,9 @@ const fileToPng = (f, max = 160) => new Promise((ok, no) => { const r = new File
 function vOffers() {
   const o = getOff(), sec = o.sec, bd = o.badge;
   const t = (path, label, val, ph = '') => `<label class="block text-sm font-semibold">${label}<input class="inp mt-1 font-normal" data-off="${path}" value="${esc(val)}" placeholder="${esc(ph)}"></label>`;
-  return `<p class="text-xs text-black/60 mb-3">এখান থেকে ওয়েবসাইটের অফার অংশগুলো নিয়ন্ত্রণ করুন। কোনো ঘর ফাঁকা রাখলে সাইটের আগের ডিফল্ট লেখা/ছবি দেখাবে। পরিবর্তনের পর নিচের "সেভ করুন" চাপুন।</p>
-  <div class="card p-4 space-y-3 max-w-xl"><h3 class="font-bold">অফার সেকশন (কালো ব্যানার)</h3>
-    <label class="flex items-center gap-2 text-sm"><input type="checkbox" data-off="sec.on" ${sec.on !== false ? 'checked' : ''}> সাইটে অফার সেকশন দেখান</label>
+  return `<p class="text-xs text-black/60 mb-3">এখানে নতুন অফার লিখে সেভ করলে যে-ই নতুন করে সাইটে ঢুকবে তার সামনে পপআপ হয়ে এই অফার দেখাবে (প্রতি ভিজিটে একবার)। শিরোনাম বা ছবি ফাঁকা রাখলে পপআপ আসবে না। কোনো ঘর ফাঁকা রাখলে সাইটের আগের ডিফল্ট লেখা/ছবি দেখাবে। পরিবর্তনের পর নিচের "সেভ করুন" চাপুন।</p>
+  <div class="card p-4 space-y-3 max-w-xl"><h3 class="font-bold">🎁 অফার পপআপ — নতুন ভিজিটর সাইটে ঢুকলেই সামনে দেখাবে</h3>
+    <label class="flex items-center gap-2 text-sm"><input type="checkbox" data-off="sec.on" ${sec.on !== false ? 'checked' : ''}> সাইটে ঢুকলে অফার পপআপ দেখান</label>
     ${t('sec.tag', 'ছোট লেখা (উপরে)', sec.tag, 'Limited time offer')}
     <label class="block text-sm font-semibold">শিরোনাম <span class="text-xs font-normal text-black/50">(নতুন লাইনে লিখলে লাইন ভাঙবে)</span><textarea rows="2" class="inp mt-1 font-normal" data-off="sec.title" placeholder="Hair brushes, combs & massagers: save up to 38%">${esc(sec.title)}</textarea></label>
     <label class="block text-sm font-semibold">বিবরণ<textarea rows="2" class="inp mt-1 font-normal" data-off="sec.desc" placeholder="Sandalwood and bamboo wood tools at special offer prices.">${esc(sec.desc)}</textarea></label>
@@ -501,6 +501,47 @@ async function migrateImages() {
   toast(bn(done) + 'টি সরানো হয়েছে ✅' + (fail ? ` · ${bn(fail)}টি হয়নি: ${err}` : ''));
 }
 
+/* ---------- ক্যাটাগরি ও ব্র্যান্ড সাজানো (সিরিয়াল, আইকন/লোগো, যোগ-বিয়োগ) ---------- */
+const BRANDS_BUILTIN = BRANDS.map(([n, a]) => [n, [...a]]);
+const brandCfg = () => Array.isArray(D.settings.brands) ? D.settings.brands : [];
+function brandRows() {
+  const rows = brandCfg().filter(c => c && c.name).map(c => ({ name: c.name, aliases: Array.isArray(c.aliases) && c.aliases.length ? c.aliases : (BRANDS_BUILTIN.find(b => b[0] === c.name)?.[1] || [String(c.name).toLowerCase()]), logo: c.logo || '', hidden: !!c.hidden }));
+  BRANDS_BUILTIN.forEach(([n, a]) => { if (!rows.some(r => r.name === n)) rows.push({ name: n, aliases: a, logo: '', hidden: false }); });
+  return rows;
+}
+const syncBrands = () => BRANDS.splice(0, BRANDS.length, ...brandRows().map(r => [r.name, r.aliases]));
+const DEFAULT_CAT_ORDER = ['Face', 'Lip', 'Hair', 'Bath & Body', 'Eye', 'Makeup', 'Fragrance', 'K-Beauty', 'Pharmacy Items', 'Hair Brushes', 'Combs', 'Massagers'];
+function catRows() {
+  const cfg = Array.isArray(D.settings.catCfg) ? D.settings.catCfg : [];
+  return [...new Set([...cfg.map(c => c.name), ...DEFAULT_CAT_ORDER, ...allCats()])].map(n => ({ name: n, icon: '', hidden: false, ...(cfg.find(c => c.name === n) || {}) }));
+}
+async function saveCatRows(rows) { try { await setDoc(doc(db, 'settings', 'main'), { catCfg: rows.map(r => ({ name: r.name, icon: r.icon || '', hidden: !!r.hidden })) }, { merge: true }); toast('সেভ হয়েছে ✅'); } catch (e) { toast('সেভ হয়নি: ' + (e.code || e.message)); } }
+async function saveBrandRows(rows) { try { await setDoc(doc(db, 'settings', 'main'), { brands: rows.map(r => ({ name: r.name, aliases: r.aliases, logo: r.logo || '', hidden: !!r.hidden })) }, { merge: true }); toast('সেভ হয়েছে ✅'); } catch (e) { toast('সেভ হয়নি: ' + (e.code || e.message)); } }
+function vCatBrand() {
+  const ctl = (pre, i, n) => `<div class="flex flex-col gap-1 shrink-0">${i > 0 ? `<button class="btn2 !px-2.5 !py-1" data-act="${pre}up" data-i="${i}" aria-label="উপরে">▲</button>` : '<span class="h-8"></span>'}${i < n - 1 ? `<button class="btn2 !px-2.5 !py-1" data-act="${pre}dn" data-i="${i}" aria-label="নিচে">▼</button>` : ''}</div>`;
+  const pic = (src, round, fb) => `<div class="w-12 h-12 ${round ? 'rounded-full' : 'rounded-lg'} overflow-hidden bg-gray-100 border grid place-items-center shrink-0 text-[10px] text-center leading-tight text-black/50">${src ? `<img src="${esc(src)}" class="w-full h-full ${round ? 'object-cover' : 'object-contain'}" alt="">` : fb}</div>`;
+  const cr = catRows(), br = brandRows();
+  const cats = cr.map((r, i) => { const c = D.products.filter(p => catsOf(p).includes(r.name)).length, custom = customCats().includes(r.name) && !c;
+    return `<div class="flex items-center gap-2 py-2 border-b ${r.hidden ? 'opacity-50' : ''}">${ctl('cat', i, cr.length)}${pic(r.icon, true, 'ডিফল্ট')}
+    <div class="flex-1 min-w-0"><p class="font-semibold text-sm break-words">${esc(r.name)}</p><p class="text-xs text-black/50">${bn(c)}টি প্রোডাক্ট${r.hidden ? ' · সাইটে লুকানো' : ''}</p>
+    <label class="text-xs text-blue-700 font-semibold cursor-pointer">🖼 আইকন বদলান<input type="file" accept="image/*" class="hidden" data-in="caticon" data-i="${i}"></label>${r.icon ? ` <button class="text-xs red font-semibold ml-2" data-act="caticonrm" data-i="${i}">ডিফল্ট আইকন</button>` : ''}</div>
+    <div class="flex flex-col gap-1 shrink-0"><button class="btn2 !px-2.5 ${r.hidden ? '' : 'red'}" data-act="cathide" data-i="${i}">${r.hidden ? 'দেখান' : 'লুকান'}</button>${custom ? `<button class="btn2 red !px-2.5" data-act="catdelete" data-cat="${esc(r.name)}">মুছুন</button>` : ''}</div></div>`; }).join('');
+  const brands = br.map((r, i) => { const builtin = BRANDS_BUILTIN.some(b => b[0] === r.name), c = D.products.filter(p => canonBrand(p.brand) === r.name || (!p.brand && detectBrand(p.name) === r.name)).length;
+    return `<div class="flex items-center gap-2 py-2 border-b ${r.hidden ? 'opacity-50' : ''}">${ctl('brand', i, br.length)}${pic(r.logo, false, builtin ? 'ডিফল্ট লোগো' : 'লোগো নেই')}
+    <div class="flex-1 min-w-0"><p class="font-semibold text-sm break-words">${esc(r.name)}</p><p class="text-xs text-black/50">${bn(c)}টি প্রোডাক্ট${r.hidden ? ' · সাইটে লুকানো' : ''}</p>
+    <label class="text-xs text-blue-700 font-semibold cursor-pointer">🖼 লোগো বদলান<input type="file" accept="image/*" class="hidden" data-in="brandlogo" data-i="${i}"></label>${r.logo ? ` <button class="text-xs red font-semibold ml-2" data-act="brandlogorm" data-i="${i}">ডিফল্ট লোগো</button>` : ''}</div>
+    <div class="flex flex-col gap-1 shrink-0"><button class="btn2 !px-2.5 ${r.hidden ? '' : 'red'}" data-act="brandhide" data-i="${i}">${r.hidden ? 'দেখান' : 'লুকান'}</button>${builtin ? '' : `<button class="btn2 red !px-2.5" data-act="branddel" data-i="${i}">মুছুন</button>`}</div></div>`; }).join('');
+  return `<p class="text-xs text-black/60 mb-3">এখান থেকে ওয়েবসাইটের "Featured Categories" আর "Shop By Brands" এর সিরিয়াল (▲▼), আইকন/লোগো এবং যোগ-বিয়োগ নিয়ন্ত্রণ করুন। "লুকান" চাপলে সাইট থেকে সরে যায়, প্রোডাক্ট ডিলিট হয় না। কোনো ক্যাটাগরিতে প্রোডাক্ট না থাকলে (Coming soon বাদে) সাইটে আগে থেকেই দেখায় না।</p>
+  <div class="grid md:grid-cols-2 gap-3">
+  <div class="card p-3"><h3 class="font-bold">ফিচারড ক্যাটাগরি</h3>
+    <div class="flex gap-2 my-2"><input id="newCat" class="inp" maxlength="30" placeholder="নতুন ক্যাটাগরি (ইংরেজিতে, যেমন: Hair Oil)"><button class="btn shrink-0" data-act="catnew">+ যোগ</button></div>
+    <div class="max-h-[70vh] overflow-y-auto">${cats}</div></div>
+  <div class="card p-3"><h3 class="font-bold">Shop By Brands (ফিচারড ক্যাটাগরির ঠিক পরে দেখায়)</h3>
+    <div class="flex gap-2 my-2"><input id="newBrand" class="inp" maxlength="30" placeholder="নতুন ব্র্যান্ডের নাম"><button class="btn shrink-0" data-act="brandnew">+ যোগ</button></div>
+    <div class="max-h-[70vh] overflow-y-auto">${brands}</div></div></div>`;
+}
+const swapRows = (rows, i, d) => { const j = i + d; if (j < 0 || j >= rows.length) return null; [rows[i], rows[j]] = [rows[j], rows[i]]; return rows; };
+
 /* ---------- Actions ---------- */
 const A = {
   tab: b => { tab = b.dataset.v; render(); },
@@ -550,6 +591,16 @@ const A = {
   },
   syncnow: () => { if (!firstLoad.products) return toast('ডাটা লোড হচ্ছে, একটু পরে চেষ্টা করুন'); syncCatalog(true); },
   migimgs: migrateImages,
+  catup: b => { const r = swapRows(catRows(), +b.dataset.i, -1); if (r) saveCatRows(r); },
+  catdn: b => { const r = swapRows(catRows(), +b.dataset.i, 1); if (r) saveCatRows(r); },
+  cathide: b => { const r = catRows(), x = r[+b.dataset.i]; x.hidden = !x.hidden; saveCatRows(r); },
+  caticonrm: b => { const r = catRows(); r[+b.dataset.i].icon = ''; saveCatRows(r); },
+  brandup: b => { const r = swapRows(brandRows(), +b.dataset.i, -1); if (r) saveBrandRows(r); },
+  branddn: b => { const r = swapRows(brandRows(), +b.dataset.i, 1); if (r) saveBrandRows(r); },
+  brandhide: b => { const r = brandRows(), x = r[+b.dataset.i]; x.hidden = !x.hidden; saveBrandRows(r); },
+  brandlogorm: b => { const r = brandRows(); r[+b.dataset.i].logo = ''; saveBrandRows(r); },
+  branddel: b => { const r = brandRows(), x = r[+b.dataset.i]; if (!confirm(x.name + ' ব্র্যান্ডটি মুছবেন? (প্রোডাক্ট ডিলিট হবে না)')) return; saveBrandRows(r.filter(y => y !== x)); },
+  brandnew: () => { const n = $('#newBrand').value.trim().replace(/\s+/g, ' '); if (!n) return toast('ব্র্যান্ডের নাম লিখুন'); const r = brandRows(); if (r.some(x => x.name.toLowerCase() === n.toLowerCase())) return toast('এই নামে ব্র্যান্ড আগে থেকেই আছে'); r.push({ name: n, aliases: [n.toLowerCase()], logo: '', hidden: false }); saveBrandRows(r); },
   impgo: impRun,
   impsample: impSample,
   order: b => orderModal(D.orders.find(o => o.id === b.dataset.id)),
@@ -614,6 +665,8 @@ document.addEventListener('change', async e => {
   if (k === 'banner' && t.files[0]) { toast('আপলোড হচ্ছে…'); try { await addDoc(collection(db, 'banners'), { image: await fileToData(t.files[0], 1400, .8), link: '', active: true, createdAt: serverTimestamp() }); toast('ব্যানার যোগ হয়েছে ✅'); } catch (er) { toast('আপলোড হয়নি: ' + er.code); } }
   if (k === 'popup' && t.files[0]) { toast('আপলোড হচ্ছে…'); try { await addDoc(collection(db, 'banners'), { image: await fileToData(t.files[0], 1000, .82), kind: 'popup', link: '', active: true, createdAt: serverTimestamp() }); toast('পপআপ এড যোগ হয়েছে ✅'); } catch (er) { toast('আপলোড হয়নি: ' + er.code); } }
   if (k === 'blink') updateDoc(doc(db, 'banners', t.dataset.id), { link: t.value.trim() });
+  if (k === 'caticon' && t.files[0]) { const i = +t.dataset.i, f = t.files[0]; t.value = ''; toast('আইকন আপলোড হচ্ছে…'); try { const url = await uploadCld(f, 'f_auto,q_auto,w_240,h_240,c_fill'); const r = catRows(); r[i].icon = url; await saveCatRows(r); } catch (er) { toast('আপলোড হয়নি: ' + er.message); } }
+  if (k === 'brandlogo' && t.files[0]) { const i = +t.dataset.i, f = t.files[0]; t.value = ''; toast('লোগো আপলোড হচ্ছে…'); try { const url = await uploadCld(f, 'f_auto,q_auto,w_320,c_fit'); const r = brandRows(); r[i].logo = url; await saveBrandRows(r); } catch (er) { toast('আপলোড হয়নি: ' + er.message); } }
   if (k === 'seed') { const f = t.files[0]; t.value = ''; impStart(f); }
   if (k === 'impmode') { impMode = t.value; render(); }
   if (k === 'impupd') impUpdate = t.checked;
