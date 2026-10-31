@@ -45,9 +45,9 @@
   @media (min-width:768px) { .pcar { gap:1.25rem; } .pcar > * { flex-basis:calc(30% - .85rem); } }
   @media (min-width:1024px) { .pcar > * { flex-basis:calc(22% - .95rem); } }
   body.nodisc [data-disc] { display:none !important; }
-  .pcar.brandcar > * { flex-basis:calc(42% - .375rem); }
-  @media (min-width:768px) { .pcar.brandcar > * { flex-basis:calc(28% - .85rem); } }
-  @media (min-width:1024px) { .pcar.brandcar > * { flex-basis:calc(20% - 1rem); } }
+  .pcar.brandcar > * { flex-basis:calc(60% - .375rem); }
+  @media (min-width:768px) { .pcar.brandcar > * { flex-basis:calc(34% - .85rem); } }
+  @media (min-width:1024px) { .pcar.brandcar > * { flex-basis:calc(25% - 1rem); } }
   .card { transition: transform .25s ease, box-shadow .25s ease, border-color .25s ease; }
   .card:hover { transform: translateY(-4px); box-shadow: 0 18px 34px -18px rgba(20,22,15,.35); border-color:#a3d25a; }
   .pop { animation: pop .35s ease; }
@@ -753,10 +753,10 @@ function renderBrands() {
   document.getElementById('brands').classList.toggle('hidden', !vis.length);
   $('#brandGrid').innerHTML = vis.map((b) => {
     const n = PRODUCTS.filter((p) => p.brand === b.name).length, on = activeBrand === b.name;
-    return `<button type="button" data-brand="${esc(b.name)}" class="group bg-white rounded-xl border ${on ? 'border-leaf-600 ring-2 ring-leaf-500' : 'border-black/10'} p-2 text-center transition hover:shadow-lg hover:-translate-y-1 hover:border-leaf-500" aria-label="${esc(b.name)} products">
-      <div class="h-12 sm:h-14 grid place-items-center overflow-hidden rounded-lg bg-white">${b.logo ? `<img src="${esc(b.logo)}" alt="${esc(b.name)} logo" loading="lazy" class="max-h-full max-w-full object-contain">` : `<span class="font-display font-extrabold text-lg text-leaf-700">${esc(b.name)}</span>`}</div>
-      <p class="mt-1 font-display font-bold text-xs">${esc(b.name)}</p>
-      <span class="inline-block mt-0.5 px-1.5 py-0.5 rounded-full text-[9px] font-semibold ${n ? 'bg-leaf-500 text-ink' : 'bg-black/5 text-black/55'}">${n ? n + (n === 1 ? ' product' : ' products') : 'Coming soon'}</span>
+    return `<button type="button" data-brand="${esc(b.name)}" class="group bg-white rounded-xl border ${on ? 'border-leaf-600 ring-2 ring-leaf-500' : 'border-black/10'} p-3 text-center transition hover:shadow-lg hover:-translate-y-1 hover:border-leaf-500" aria-label="${esc(b.name)} products">
+      <div class="h-28 sm:h-32 md:h-36 grid place-items-center overflow-hidden rounded-lg bg-white">${b.logo ? `<img src="${esc(b.logo)}" alt="${esc(b.name)} logo" loading="lazy" class="max-h-full max-w-full object-contain">` : `<span class="font-display font-extrabold text-lg text-leaf-700">${esc(b.name)}</span>`}</div>
+      <p class="mt-2 font-display font-bold text-sm sm:text-base">${esc(b.name)}</p>
+      <span class="inline-block mt-1 px-2 py-0.5 rounded-full text-[11px] font-semibold ${n ? 'bg-leaf-500 text-ink' : 'bg-black/5 text-black/55'}">${n ? n + (n === 1 ? ' product' : ' products') : 'Coming soon'}</span>
     </button>`;
   }).join('');
 }
