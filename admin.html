@@ -156,17 +156,25 @@ const BASE_CATS = ['Hair Brushes', 'Combs', 'Massagers', 'Face', 'Lip', 'Hair', 
 const catsOf = p => Array.isArray(p.featCats) ? p.featCats : (p.cat ? [p.cat] : []);
 const customCats = () => Array.isArray(D.settings.customCats) ? D.settings.customCats : [];
 const allCats = () => [...new Set([...BASE_CATS, ...customCats(), ...D.products.flatMap(catsOf)])];
+const catCfg = () => Array.isArray(D.settings.catCfg) ? D.settings.catCfg.filter(c => c && c.name) : [];
+const catEnt = k => { const c = catCfg().find(x => x.name === k); return { name: k, icon: c?.icon || '', hidden: !!c?.hidden }; };
+const catOrdered = () => { const all = allCats(), cf = catCfg().map(c => c.name).filter(n => all.includes(n)); return [...new Set([...cf, ...all])]; };
+const saveCatCfg = async arr => { try { await setDoc(doc(db, 'settings', 'main'), { catCfg: arr }, { merge: true }); toast('ক্যাটাগরি আপডেট হয়েছে ✅'); } catch (e) { toast('আপডেট হয়নি: ' + e.code); } };
+const catPatch = (k, patch) => saveCatCfg(catOrdered().map(n => n === k ? { ...catEnt(n), ...patch } : catEnt(n)));
 function vCats() {
   const byName = (x, y) => (x.name || '').localeCompare(y.name || '');
   return `<h2 class="font-bold text-lg mt-8 mb-1">ফিচারড ক্যাটাগরি (ওয়েবসাইটের গোল আইকন)</h2>
   <p class="text-xs text-black/60 mb-3">ওয়েবসাইটের "Featured Categories" এর প্রতিটি আইকনে কোন কোন প্রোডাক্ট থাকবে তা এখান থেকে যোগ বা বাদ দিন। একটি প্রোডাক্ট একাধিক ক্যাটাগরিতে রাখা যায়। ক্যাটাগরিতে কোনো প্রোডাক্ট না থাকলে আইকনটি সাইটে দেখাবে না। (বাদ দিলে প্রোডাক্ট ডিলিট হয় না।)</p>
   <div class="card p-3 mb-3 flex gap-2"><input id="newCat" class="inp" maxlength="30" placeholder="নতুন ক্যাটাগরির নাম (ইংরেজিতে, যেমন: Hair Oil)"><button class="btn shrink-0" data-act="catnew">+ নতুন ক্যাটাগরি</button></div>
-  <div class="grid md:grid-cols-3 gap-3">${allCats().map((k, i) => {
+  <div class="grid md:grid-cols-3 gap-3">${catOrdered().map((k, i) => {
     const inC = D.products.filter(p => catsOf(p).includes(k)).sort(byName);
     const out = D.products.filter(p => !catsOf(p).includes(k)).sort(byName);
     const isCustom = customCats().includes(k) && !inC.length;
     return `<div class="card p-3"><div class="flex justify-between items-center mb-2 gap-2"><h3 class="font-bold break-words min-w-0">${esc(k)}</h3><span class="text-xs font-bold px-2 py-0.5 rounded-full bg-black/10 shrink-0">${bn(inC.length)}টি</span></div>
-    <div class="max-h-96 overflow-y-auto">${inC.map(p => `<div class="flex items-center gap-2 py-1.5 border-b"><img src="${esc(p.images?.[0] || '')}" class="w-10 h-12 object-cover rounded bg-gray-100 shrink-0" alt=""><div class="flex-1 min-w-0"><p class="text-sm leading-snug">${esc(p.name)}</p>${hideNote(p) ? `<p class="text-xs red font-bold">সাইটে দেখাচ্ছে না: ${hideNote(p)}</p>` : ''}</div><button class="btn2 red shrink-0" data-act="catrm" data-id="${p.id}" data-cat="${esc(k)}" aria-label="ক্যাটাগরি থেকে বাদ দিন">✕</button></div>`).join('') || '<p class="text-sm text-black/50 py-2">এই ক্যাটাগরিতে কোনো প্রোডাক্ট নেই (সাইটে আইকন দেখাবে না)</p>'}</div>
+    <div class="flex items-center gap-2 mb-2">${catEnt(k).icon ? `<img src="${esc(catEnt(k).icon)}" class="h-10 w-10 object-cover rounded-full bg-gray-50" alt="">` : '<span class="text-xs text-black/50">আইকন নেই / বিল্ট-ইন</span>'}<label class="btn2 !py-1 !px-2 text-xs cursor-pointer">আইকন<input type="file" accept="image/*" class="hidden" data-in="caticon" data-cat="${esc(k)}"></label>${catEnt(k).icon ? `<button class="btn2 red !py-1 !px-2 text-xs" data-act="caticonrm" data-cat="${esc(k)}">আইকন সরান</button>` : ''}</div>
+    <div class="flex gap-1.5 mb-2"><button class="btn2 !py-1 !px-2 text-xs" data-act="catup" data-cat="${esc(k)}">↑</button><button class="btn2 !py-1 !px-2 text-xs" data-act="catdown" data-cat="${esc(k)}">↓</button><button class="btn2 !py-1 !px-2 text-xs" data-act="cathide" data-cat="${esc(k)}">${catEnt(k).hidden ? 'সাইটে দেখান' : 'সাইটে লুকান'}</button></div>
+    <div class="flex gap-2 mb-2"><select id="cmv-${i}" class="inp"><option value="">ট্রান্সফারের ক্যাটাগরি…</option>${allCats().filter(x => x !== k).map(x => `<option value="${esc(x)}">${esc(x)}</option>`).join('')}</select>${inC.length ? `<button class="btn2 shrink-0 text-xs" data-act="catmoveall" data-i="${i}" data-cat="${esc(k)}" aria-label="সব প্রোডাক্ট সরান">সব সরান</button>` : ''}</div>
+    <div class="max-h-96 overflow-y-auto">${inC.map(p => `<div class="flex items-center gap-2 py-1.5 border-b"><img src="${esc(p.images?.[0] || '')}" class="w-10 h-12 object-cover rounded bg-gray-100 shrink-0" alt=""><div class="flex-1 min-w-0"><p class="text-sm leading-snug">${esc(p.name)}</p>${hideNote(p) ? `<p class="text-xs red font-bold">সাইটে দেখাচ্ছে না: ${hideNote(p)}</p>` : ''}</div><button class="btn2 shrink-0 text-xs" data-act="catmove" data-id="${p.id}" data-i="${i}" data-cat="${esc(k)}" aria-label="অন্য ক্যাটাগরিতে সরান">↪</button><button class="btn2 red shrink-0" data-act="catrm" data-id="${p.id}" data-cat="${esc(k)}" aria-label="ক্যাটাগরি থেকে বাদ দিন">✕</button></div>`).join('') || '<p class="text-sm text-black/50 py-2">এই ক্যাটাগরিতে কোনো প্রোডাক্ট নেই (সাইটে আইকন দেখাবে না)</p>'}</div>
     ${out.length ? `<div class="flex gap-2 mt-3"><select id="cadd-${i}" class="inp"><option value="">প্রোডাক্ট বেছে নিন…</option>${out.map(p => `<option value="${p.id}">${esc(p.name)}</option>`).join('')}</select><button class="btn shrink-0" data-act="catadd" data-i="${i}" data-cat="${esc(k)}">+ যোগ</button></div>` : '<p class="text-xs text-black/50 mt-3">সব প্রোডাক্টই এই ক্যাটাগরিতে আছে</p>'}
     ${isCustom ? `<button class="btn2 red w-full mt-3" data-act="catdelete" data-cat="${esc(k)}">এই ক্যাটাগরি মুছুন</button>` : ''}</div>`;
   }).join('')}</div>`;
@@ -545,6 +553,12 @@ const A = {
   secrm: b => { const p = D.products.find(x => x.id === b.dataset.id); if (p) setSections(p, secOf(p).filter(x => x !== b.dataset.sec)); },
   catadd: b => { const k = b.dataset.cat, id = $('#cadd-' + b.dataset.i)?.value; if (!id) return toast('আগে প্রোডাক্ট বেছে নিন'); const p = D.products.find(x => x.id === id); if (p) setCats(p, [...catsOf(p).filter(x => x !== k), k]); },
   catrm: b => { const p = D.products.find(x => x.id === b.dataset.id); if (p) setCats(p, catsOf(p).filter(x => x !== b.dataset.cat)); },
+  catmove: b => { const t = $('#cmv-' + b.dataset.i)?.value; if (!t) return toast('আগে ট্রান্সফারের ক্যাটাগরি বেছে নিন'); const p = D.products.find(x => x.id === b.dataset.id); if (p) setCats(p, [...catsOf(p).filter(x => x !== b.dataset.cat && x !== t), t]); },
+  catmoveall: async b => { const t = $('#cmv-' + b.dataset.i)?.value, k = b.dataset.cat; if (!t) return toast('আগে ট্রান্সফারের ক্যাটাগরি বেছে নিন'); const ps = D.products.filter(p => catsOf(p).includes(k)); if (!confirm(bn(ps.length) + 'টি প্রোডাক্ট "' + k + '" থেকে "' + t + '" এ সরাবেন?')) return; try { await Promise.all(ps.map(p => updateDoc(doc(db, 'products', p.id), { featCats: [...catsOf(p).filter(x => x !== k && x !== t), t] }))); toast('ট্রান্সফার হয়েছে ✅'); } catch (e) { toast('হয়নি: ' + e.code); } },
+  cathide: b => catPatch(b.dataset.cat, { hidden: !catEnt(b.dataset.cat).hidden }),
+  caticonrm: b => catPatch(b.dataset.cat, { icon: '' }),
+  catup: b => { const l = catOrdered().map(catEnt), i = l.findIndex(x => x.name === b.dataset.cat); if (i > 0) { [l[i - 1], l[i]] = [l[i], l[i - 1]]; saveCatCfg(l); } },
+  catdown: b => { const l = catOrdered().map(catEnt), i = l.findIndex(x => x.name === b.dataset.cat); if (i >= 0 && i < l.length - 1) { [l[i + 1], l[i]] = [l[i], l[i + 1]]; saveCatCfg(l); } },
   catnew: async () => {
     const n = $('#newCat').value.trim().replace(/\s+/g, ' ');
     if (!n) return toast('ক্যাটাগরির নাম লিখুন');
@@ -659,6 +673,7 @@ document.addEventListener('change', async e => {
   if (k === 'popup' && t.files[0]) { toast('আপলোড হচ্ছে…'); try { await addDoc(collection(db, 'banners'), { image: await fileToData(t.files[0], 1000, .82), kind: 'popup', link: '', active: true, createdAt: serverTimestamp() }); toast('পপআপ এড যোগ হয়েছে ✅'); } catch (er) { toast('আপলোড হয়নি: ' + er.code); } }
   if (k === 'blink') updateDoc(doc(db, 'banners', t.dataset.id), { link: t.value.trim() });
   if (k === 'brandlogo' && t.files[0]) { const f = t.files[0], nm = t.dataset.brand; t.value = ''; toast('লোগো আপলোড হচ্ছে…'); try { const url = await uploadCld(f); await saveBrands(brandCfg().map(x => x.name === nm ? { ...x, logo: url } : x)); } catch (er) { toast('আপলোড হয়নি: ' + (er.message || er.code)); } }
+  if (k === 'caticon' && t.files[0]) { const f = t.files[0], nm = t.dataset.cat; t.value = ''; toast('আইকন আপলোড হচ্ছে…'); try { const url = await uploadCld(f); await catPatch(nm, { icon: url }); } catch (er) { toast('আপলোড হয়নি: ' + (er.message || er.code)); } }
   if (k === 'seed') { const f = t.files[0]; t.value = ''; impStart(f); }
   if (k === 'impmode') { impMode = t.value; render(); }
   if (k === 'impupd') impUpdate = t.checked;
