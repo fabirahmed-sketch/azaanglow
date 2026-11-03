@@ -56,7 +56,7 @@ const dt = t => t?.toDate ? t.toDate().toLocaleString('bn-BD', {dateStyle:'mediu
 const toast = m => { const t = $('#toast'); t.textContent = m; t.classList.remove('hidden'); clearTimeout(toast.t); toast.t = setTimeout(() => t.classList.add('hidden'), 2500); };
 const ST = { pending:['পেন্ডিং','bg-yellow-100 text-yellow-800'], confirmed:['কনফার্ম','bg-blue-100 text-blue-800'], shipped:['শিপড','bg-purple-100 text-purple-800'], delivered:['ডেলিভারড','bg-green-100 text-green-800'], cancelled:['ক্যান্সেল','bg-red-100 text-red-800'] };
 const badge = s => `<span class="px-2 py-0.5 rounded-full text-xs font-bold ${ST[s]?.[1] || ''}">${ST[s]?.[0] || s}</span>`;
-const TABS = [['dash','ড্যাশবোর্ড'],['products','প্রোডাক্ট'],['sections','ফিচারড সেকশন ও ক্যাটাগরি'],['orders','অর্ডার'],['customers','কাস্টমার'],['promos','প্রমো কোড'],['banners','ব্যানার'],['offers','অফার আইকন'],['popups','পপআপ এড'],['settings','সেটিংস']];
+const TABS = [['dash','ড্যাশবোর্ড'],['products','প্রোডাক্ট'],['sections','ফিচারড সেকশন ও ক্যাটাগরি'],['brands','ব্র্যান্ড'],['orders','অর্ডার'],['customers','কাস্টমার'],['promos','প্রমো কোড'],['banners','ব্যানার'],['offers','অফার আইকন'],['popups','পপআপ এড'],['settings','সেটিংস']];
 
 const D = { products:[], orders:[], promos:[], banners:[], settings:{} };
 let tab = 'dash', oFilter = 'all', oSearch = '', pSearch = '', form = {}, soundOn = false, firstLoad = {}, unsubs = [];
@@ -112,7 +112,7 @@ $('#modal').addEventListener('mousedown', e => { if (e.target.id === 'modal') cl
 /* ---------- Views ---------- */
 function render() {
   $('#tabs').innerHTML = TABS.map(([k, n]) => `<button data-act="tab" data-v="${k}" class="tab shrink-0 px-3 py-1.5 rounded-full border bg-white ${tab === k ? 'on' : ''}">${n}${k === 'orders' && D.orders.filter(o => o.status === 'pending').length ? ` (${bn(D.orders.filter(o => o.status === 'pending').length)})` : ''}</button>`).join('');
-  $('#view').innerHTML = ({ dash: vDash, products: vProducts, sections: vSections, orders: vOrders, customers: vCustomers, promos: vPromos, banners: vBanners, offers: vOffers, popups: vPopups, settings: vSettings })[tab]();
+  $('#view').innerHTML = ({ dash: vDash, products: vProducts, sections: vSections, brands: vBrands, orders: vOrders, customers: vCustomers, promos: vPromos, banners: vBanners, offers: vOffers, popups: vPopups, settings: vSettings })[tab]();
 }
 function vDash() {
   const today = new Date().toDateString(), live = D.orders.filter(o => o.status !== 'cancelled');
@@ -170,6 +170,37 @@ function vCats() {
     ${out.length ? `<div class="flex gap-2 mt-3"><select id="cadd-${i}" class="inp"><option value="">প্রোডাক্ট বেছে নিন…</option>${out.map(p => `<option value="${p.id}">${esc(p.name)}</option>`).join('')}</select><button class="btn shrink-0" data-act="catadd" data-i="${i}" data-cat="${esc(k)}">+ যোগ</button></div>` : '<p class="text-xs text-black/50 mt-3">সব প্রোডাক্টই এই ক্যাটাগরিতে আছে</p>'}
     ${isCustom ? `<button class="btn2 red w-full mt-3" data-act="catdelete" data-cat="${esc(k)}">এই ক্যাটাগরি মুছুন</button>` : ''}</div>`;
   }).join('')}</div>`;
+}
+/* ---------- ব্র্যান্ড ম্যানেজমেন্ট (ওয়েবসাইটের "Shop By Brands") ---------- */
+const brandCfg = () => {
+  const cfg = Array.isArray(D.settings.brands) ? D.settings.brands : [];
+  const out = cfg.filter(c => c && c.name).map(c => { const b0 = BRANDS.find(([n]) => n === c.name); return { name: c.name, aliases: (Array.isArray(c.aliases) && c.aliases.length) ? c.aliases : (b0 ? b0[1] : [String(c.name).toLowerCase()]), logo: c.logo || '', hidden: !!c.hidden }; });
+  BRANDS.forEach(([n, al]) => { if (!out.some(o => o.name === n)) out.push({ name: n, aliases: al, logo: '', hidden: false }); });
+  return out;
+};
+const saveBrands = async arr => { try { await setDoc(doc(db, 'settings', 'main'), { brands: arr }, { merge: true }); toast('ব্র্যান্ড আপডেট হয়েছে ✅'); } catch (e) { toast('আপডেট হয়নি: ' + e.code); } };
+const brandOf = p => canonBrand(p.brand) || detectBrand(p.name);
+function vBrands() {
+  const byName = (x, y) => (x.name || '').localeCompare(y.name || '');
+  const list = brandCfg();
+  return `<h2 class="font-bold text-lg mb-1">ব্র্যান্ড (ওয়েবসাইটের "Shop By Brands")</h2>
+  <p class="text-xs text-black/60 mb-3">প্রতিটি ব্র্যান্ডে কোন কোন প্রোডাক্ট থাকবে তা এখান থেকে যোগ বা বাদ দিন। ব্র্যান্ডের সিরিয়াল বদলানো, লোগো দেওয়া, সাইট থেকে লুকানো এবং নতুন ব্র্যান্ড যোগ করা যাবে। (বাদ দিলে প্রোডাক্ট ডিলিট হয় না।)</p>
+  <div class="card p-3 mb-3 flex gap-2"><input id="newBrand" class="inp" maxlength="30" placeholder="নতুন ব্র্যান্ডের নাম (ইংরেজিতে, যেমন: Garnier)"><button class="btn shrink-0" data-act="brandnew">+ নতুন ব্র্যান্ড</button></div>
+  <div class="grid md:grid-cols-3 gap-3">${list.map((b, i) => {
+    const inB = D.products.filter(p => brandOf(p) === b.name).sort(byName);
+    const out = D.products.filter(p => brandOf(p) !== b.name).sort(byName);
+    const custom = !BRANDS.some(([n]) => n === b.name);
+    return `<div class="card p-3"><div class="flex justify-between items-center mb-2 gap-2"><h3 class="font-bold break-words min-w-0">${esc(b.name)}${b.hidden ? ' <span class="text-xs red">(লুকানো)</span>' : ''}</h3><span class="text-xs font-bold px-2 py-0.5 rounded-full bg-black/10 shrink-0">${bn(inB.length)}টি</span></div>
+    <div class="flex items-center gap-2 mb-2">${b.logo ? `<img src="${esc(b.logo)}" class="h-10 max-w-[80px] object-contain rounded bg-gray-50" alt="">` : '<span class="text-xs text-black/50">লোগো নেই / বিল্ট-ইন</span>'}
+      <label class="btn2 !py-1 !px-2 text-xs cursor-pointer">লোগো<input type="file" accept="image/*" class="hidden" data-in="brandlogo" data-brand="${esc(b.name)}"></label>${b.logo ? `<button class="btn2 red !py-1 !px-2 text-xs" data-act="brandlogorm" data-brand="${esc(b.name)}">লোগো সরান</button>` : ''}</div>
+    <div class="flex gap-1.5 mb-2"><button class="btn2 !py-1 !px-2 text-xs" data-act="brandup" data-brand="${esc(b.name)}">↑</button><button class="btn2 !py-1 !px-2 text-xs" data-act="branddown" data-brand="${esc(b.name)}">↓</button><button class="btn2 !py-1 !px-2 text-xs" data-act="brandhide" data-brand="${esc(b.name)}">${b.hidden ? 'সাইটে দেখান' : 'সাইটে লুকান'}</button></div>
+    <div class="max-h-72 overflow-y-auto">${inB.map(p => `<div class="flex items-center gap-2 py-1.5 border-b"><img src="${esc(p.images?.[0] || '')}" class="w-10 h-12 object-cover rounded bg-gray-100 shrink-0" alt=""><p class="flex-1 min-w-0 text-sm leading-snug">${esc(p.name)}</p><button class="btn2 red shrink-0" data-act="brandrm" data-id="${p.id}">বাদ</button></div>`).join('') || '<p class="text-xs text-black/50">কোনো প্রোডাক্ট নেই</p>'}</div>
+    ${out.length ? `<div class="flex gap-2 mt-3"><select id="badd-${i}" class="inp"><option value="">প্রোডাক্ট বেছে নিন…</option>${out.map(p => `<option value="${p.id}">${esc(p.name)}</option>`).join('')}</select><button class="btn shrink-0" data-act="brandadd" data-i="${i}" data-brand="${esc(b.name)}">+ যোগ</button></div>` : ''}
+    ${custom && !inB.length ? `<button class="btn2 red w-full mt-3" data-act="branddel" data-brand="${esc(b.name)}">এই ব্র্যান্ড মুছুন</button>` : ''}</div>`;
+  }).join('')}</div>`;
+}
+async function setBrand(p, name) {
+  try { await updateDoc(doc(db, 'products', p.id), { brand: name }); toast(name || !detectBrand(p.name) ? 'ব্র্যান্ড আপডেট হয়েছে ✅' : 'নামের কারণে ব্র্যান্ড আবার ধরা পড়ছে — প্রোডাক্টের নাম বদলান'); } catch (e) { toast('আপডেট হয়নি: ' + e.code); }
 }
 async function setCats(p, arr) {
   try { await updateDoc(doc(db, 'products', p.id), { featCats: arr }); toast('ক্যাটাগরি আপডেট হয়েছে ✅'); } catch (e) { toast('আপডেট হয়নি: ' + e.code); }
@@ -521,6 +552,19 @@ const A = {
     try { await setDoc(doc(db, 'settings', 'main'), { customCats: [...customCats(), n] }, { merge: true }); toast('ক্যাটাগরি যোগ হয়েছে ✅ এখন প্রোডাক্ট যোগ করুন'); } catch (e) { toast('যোগ হয়নি: ' + e.code); }
   },
   catdelete: async b => { if (!confirm('এই ক্যাটাগরি মুছবেন?')) return; try { await setDoc(doc(db, 'settings', 'main'), { customCats: customCats().filter(x => x !== b.dataset.cat) }, { merge: true }); toast('মুছে ফেলা হয়েছে'); } catch (e) { toast('মোছা হয়নি: ' + e.code); } },
+  brandnew: async () => {
+    const n = $('#newBrand').value.trim().replace(/\s+/g, ' ');
+    if (!n) return toast('ব্র্যান্ডের নাম লিখুন');
+    if (brandCfg().some(x => x.name.toLowerCase() === n.toLowerCase())) return toast('এই নামে ব্র্যান্ড আগে থেকেই আছে');
+    await saveBrands([...brandCfg(), { name: n, aliases: [n.toLowerCase()], logo: '', hidden: false }]);
+  },
+  branddel: b => { if (confirm('এই ব্র্যান্ড মুছবেন?')) saveBrands(brandCfg().filter(x => x.name !== b.dataset.brand)); },
+  brandhide: b => saveBrands(brandCfg().map(x => x.name === b.dataset.brand ? { ...x, hidden: !x.hidden } : x)),
+  brandlogorm: b => saveBrands(brandCfg().map(x => x.name === b.dataset.brand ? { ...x, logo: '' } : x)),
+  brandup: b => { const l = brandCfg(), i = l.findIndex(x => x.name === b.dataset.brand); if (i > 0) { [l[i - 1], l[i]] = [l[i], l[i - 1]]; saveBrands(l); } },
+  branddown: b => { const l = brandCfg(), i = l.findIndex(x => x.name === b.dataset.brand); if (i >= 0 && i < l.length - 1) { [l[i + 1], l[i]] = [l[i], l[i + 1]]; saveBrands(l); } },
+  brandadd: b => { const id = $('#badd-' + b.dataset.i)?.value; if (!id) return toast('আগে প্রোডাক্ট বেছে নিন'); const p = D.products.find(x => x.id === id); if (p) setBrand(p, b.dataset.brand); },
+  brandrm: b => { const p = D.products.find(x => x.id === b.dataset.id); if (p) setBrand(p, ''); },
   offrm: b => { getOff().sec.images.splice(+b.dataset.i, 1); render(); },
   badgerm: () => { getOff().badge.image = ''; render(); },
   offsave: async () => {
@@ -614,6 +658,7 @@ document.addEventListener('change', async e => {
   if (k === 'banner' && t.files[0]) { toast('আপলোড হচ্ছে…'); try { await addDoc(collection(db, 'banners'), { image: await fileToData(t.files[0], 1400, .8), link: '', active: true, createdAt: serverTimestamp() }); toast('ব্যানার যোগ হয়েছে ✅'); } catch (er) { toast('আপলোড হয়নি: ' + er.code); } }
   if (k === 'popup' && t.files[0]) { toast('আপলোড হচ্ছে…'); try { await addDoc(collection(db, 'banners'), { image: await fileToData(t.files[0], 1000, .82), kind: 'popup', link: '', active: true, createdAt: serverTimestamp() }); toast('পপআপ এড যোগ হয়েছে ✅'); } catch (er) { toast('আপলোড হয়নি: ' + er.code); } }
   if (k === 'blink') updateDoc(doc(db, 'banners', t.dataset.id), { link: t.value.trim() });
+  if (k === 'brandlogo' && t.files[0]) { const f = t.files[0], nm = t.dataset.brand; t.value = ''; toast('লোগো আপলোড হচ্ছে…'); try { const url = await uploadCld(f); await saveBrands(brandCfg().map(x => x.name === nm ? { ...x, logo: url } : x)); } catch (er) { toast('আপলোড হয়নি: ' + (er.message || er.code)); } }
   if (k === 'seed') { const f = t.files[0]; t.value = ''; impStart(f); }
   if (k === 'impmode') { impMode = t.value; render(); }
   if (k === 'impupd') impUpdate = t.checked;
