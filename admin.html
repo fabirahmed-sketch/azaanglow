@@ -59,7 +59,7 @@ const badge = s => `<span class="px-2 py-0.5 rounded-full text-xs font-bold ${ST
 const TABS = [['dash','ড্যাশবোর্ড'],['products','প্রোডাক্ট'],['sections','ফিচারড সেকশন ও ক্যাটাগরি'],['brands','ব্র্যান্ড'],['orders','অর্ডার'],['customers','কাস্টমার'],['promos','প্রমো কোড'],['banners','ব্যানার'],['offers','অফার আইকন'],['popups','পপআপ এড'],['settings','সেটিংস']];
 
 const D = { products:[], orders:[], promos:[], banners:[], settings:{} };
-let tab = 'dash', oFilter = 'all', oSearch = '', pSearch = '', form = {}, soundOn = false, firstLoad = {}, unsubs = [];
+let tab = 'dash', oFilter = 'all', oSearch = '', pSearch = '', secQ = {}, autoBusy = false, form = {}, soundOn = false, firstLoad = {}, unsubs = [];
 
 /* ---------- Auth ---------- */
 $('#loginForm').addEventListener('submit', async e => {
@@ -77,10 +77,10 @@ function listen(name, ord) {
   unsubs.push(onSnapshot(q, s => {
     D[name] = s.docs.map(d => ({ id: d.id, ...d.data() }));
     if (name === 'orders' && firstLoad.orders && soundOn && s.docChanges().some(c => c.type === 'added')) { beep(); toast('🛒 নতুন অর্ডার এসেছে!'); }
-    firstLoad[name] = true; if (name === 'products') { hadProducts ||= D.products.length > 0; schedSync(); } render();
+    firstLoad[name] = true; if (name === 'products') { hadProducts ||= D.products.length > 0; schedSync(); } render(); autoBestRun();
   }, err => toast('ডাটা লোড হয়নি: ' + err.code)));
 }
-function listenSettings() { unsubs.push(onSnapshot(doc(db, 'settings', 'main'), s => { D.settings = s.data() || {}; render(); })); }
+function listenSettings() { unsubs.push(onSnapshot(doc(db, 'settings', 'main'), s => { D.settings = s.data() || {}; render(); autoBestRun(); })); }
 function beep() { try { const c = new AudioContext(), o = c.createOscillator(); o.connect(c.destination); o.frequency.value = 880; o.start(); setTimeout(() => { o.stop(); c.close(); }, 350); } catch {} }
 
 /* ---------- Image helper (ছবি ছোট করে Firestore এ রাখা হয়, আলাদা স্টোরেজ লাগে না) ---------- */
@@ -133,19 +133,58 @@ const HAIR_CATS = ['Hair Brushes', 'Combs', 'Massagers'];
 const secOf = p => Array.isArray(p.sections) ? p.sections : [p.bestSeller ? 'best' : null, p.group === 'bamboo' ? 'bamboo' : (p.group === 'sandalwood' || [p.cat, ...(p.featCats || [])].some(c => HAIR_CATS.includes(c))) ? 'sandalwood' : null].filter(Boolean);
 const secFields = arr => ({ sections: arr, bestSeller: arr.includes('best'), group: arr.includes('sandalwood') ? 'sandalwood' : arr.includes('bamboo') ? 'bamboo' : 'other' });
 const hideNote = p => (p.active === false ? 'লুকানো' : (+p.stock || 0) <= 0 ? 'স্টক শেষ' : '');
+/* ---------- অটো বেস্ট সেলিং (কাস্টমারের অর্ডার থেকে) ---------- */
+function bestRank() {
+  const ab = D.settings.autoBest || {}, days = +ab.days || 0, since = days ? Date.now() - days * 864e5 : 0;
+  const byId = new Map(D.products.map(p => [p.id, p])), byName = new Map(D.products.map(p => [String(p.name || '').trim().toLowerCase(), p]));
+  const sold = {};
+  D.orders.forEach(o => {
+    if (o.status === 'cancelled') return;
+    const t = o.createdAt?.toDate ? o.createdAt.toDate().getTime() : 0; if (since && t && t < since) return;
+    (o.items || []).forEach(it => { const p = byId.get(it.pid) || byName.get(String(it.name || '').trim().toLowerCase()); if (p) sold[p.id] = (sold[p.id] || 0) + (+it.qty || 1); });
+  });
+  return Object.entries(sold).map(([id, q]) => ({ p: byId.get(id), q })).filter(x => x.p && x.p.active !== false && (+x.p.stock || 0) > 0).sort((x, y) => y.q - x.q || (x.p.name || '').localeCompare(y.p.name || ''));
+}
+async function autoBestRun(force) {
+  const ab = D.settings.autoBest || {};
+  if ((!ab.on && !force) || autoBusy || !firstLoad.orders || !firstLoad.products || !D.products.length) return;
+  const n = Math.min(Math.max(+ab.count || 12, 1), 50), top = bestRank().slice(0, n).map(x => x.p), ids = new Set(top.map(p => p.id));
+  const adds = top.filter(p => !secOf(p).includes('best') && !p.bestOff);
+  const rms = D.products.filter(p => p.bestAuto && secOf(p).includes('best') && !ids.has(p.id));
+  if (!adds.length && !rms.length) { if (force) toast('নতুন কিছু বদলানোর নেই — বেস্ট সেলিং আগে থেকেই আপ-টু-ডেট'); return; }
+  autoBusy = true;
+  try {
+    const bt = writeBatch(db);
+    adds.forEach(p => bt.update(doc(db, 'products', p.id), { ...secFields([...secOf(p).filter(x => x !== 'best'), 'best']), bestAuto: true }));
+    rms.forEach(p => bt.update(doc(db, 'products', p.id), { ...secFields(secOf(p).filter(x => x !== 'best')), bestAuto: false }));
+    await bt.commit(); toast('🔥 অটো বেস্ট সেলিং আপডেট হয়েছে (' + bn(adds.length) + 'টি যোগ, ' + bn(rms.length) + 'টি বাদ)');
+  } catch (e) { toast('অটো আপডেট হয়নি: ' + e.code); } finally { autoBusy = false; }
+}
+function vAutoBest() {
+  const ab = D.settings.autoBest || {}, top = bestRank().slice(0, 10);
+  return `<div class="card p-3 mb-3"><h3 class="font-bold mb-1">🔥 অটো বেস্ট সেলিং (অর্ডার অনুযায়ী)</h3>
+  <p class="text-xs text-black/60 mb-2">চালু করলে কাস্টমারের অর্ডার (বাতিল ছাড়া) থেকে সবচেয়ে বেশি বিক্রি হওয়া প্রোডাক্টগুলো নিজে থেকে "বেস্ট সেলিং"-এ যোগ হবে, আর তালিকা থেকে পড়ে গেলে অটো-যোগ হওয়াগুলো বাদ যাবে। আপনার হাতে যোগ করা প্রোডাক্ট কখনো অটো বাদ পড়বে না, আর হাতে বাদ দেওয়া প্রোডাক্ট অটো ফিরে আসবে না। এটি অ্যাডমিন প্যানেল খোলা থাকলে (নতুন অর্ডার এলেও) চলে।</p>
+  <div class="flex flex-wrap items-center gap-3 text-sm"><label class="flex items-center gap-2"><input type="checkbox" id="abOn" ${ab.on ? 'checked' : ''}> চালু</label>
+  <label class="flex items-center gap-2">কয়টি প্রোডাক্ট <input type="number" id="abCount" min="1" max="50" class="inp !w-20" value="${+ab.count || 12}"></label>
+  <label class="flex items-center gap-2">সময় <select id="abDays" class="inp !w-auto">${[[7, 'শেষ ৭ দিন'], [30, 'শেষ ৩০ দিন'], [90, 'শেষ ৯০ দিন'], [0, 'সব সময়']].map(([v, t]) => `<option value="${v}" ${(ab.days === undefined ? 30 : +ab.days) === v ? 'selected' : ''}>${t}</option>`).join('')}</select></label>
+  <button class="btn" data-act="absave">সেভ</button><button class="btn2" data-act="abrun">এখনই আপডেট</button></div>
+  <p class="text-xs font-bold mt-3 mb-1">এখন সবচেয়ে বেশি বিক্রি (সময়সীমা অনুযায়ী)</p>
+  ${top.length ? `<ol class="text-sm list-decimal pl-5 space-y-0.5">${top.map(x => `<li>${esc(x.p.name)} <b>— ${bn(x.q)}টি</b></li>`).join('')}</ol>` : '<p class="text-xs text-black/50">এই সময়ে কোনো অর্ডার নেই</p>'}</div>`;
+}
 function vSections() {
   return `<p class="text-xs text-black/60 mb-3">ওয়েবসাইটের কোন সেকশনে কোন প্রোডাক্ট দেখাবে তা এখান থেকে যোগ বা বাদ দিন। একটি প্রোডাক্ট একাধিক সেকশনে রাখা যায়। (সেকশন থেকে বাদ দিলে প্রোডাক্ট ডিলিট হয় না।)</p>
+  ${vAutoBest()}
   <div class="grid md:grid-cols-3 gap-3">${SECTIONS.map(([k, n]) => {
     const inS = D.products.filter(p => secOf(p).includes(k)).sort((x, y) => (x.name || '').localeCompare(y.name || ''));
     const out = D.products.filter(p => !secOf(p).includes(k)).sort((x, y) => (x.name || '').localeCompare(y.name || ''));
     return `<div class="card p-3"><div class="flex justify-between items-center mb-2 gap-2"><h3 class="font-bold">${n}</h3><span class="text-xs font-bold px-2 py-0.5 rounded-full bg-black/10 shrink-0">${bn(inS.length)}টি</span></div>
-    <div class="max-h-96 overflow-y-auto">${inS.map(p => `<div class="flex items-center gap-2 py-1.5 border-b"><img src="${esc(p.images?.[0] || '')}" class="w-10 h-12 object-cover rounded bg-gray-100 shrink-0" alt=""><div class="flex-1 min-w-0"><p class="text-sm leading-snug">${esc(p.name)}</p>${hideNote(p) ? `<p class="text-xs red font-bold">সাইটে দেখাচ্ছে না: ${hideNote(p)}</p>` : ''}</div><button class="btn2 red shrink-0" data-act="secrm" data-id="${p.id}" data-sec="${k}" aria-label="সেকশন থেকে বাদ দিন">✕</button></div>`).join('') || '<p class="text-sm text-black/50 py-2">এই সেকশনে কোনো প্রোডাক্ট নেই</p>'}</div>
-    ${out.length ? `<div class="flex gap-2 mt-3"><select id="add-${k}" class="inp"><option value="">প্রোডাক্ট বেছে নিন…</option>${out.map(p => `<option value="${p.id}">${esc(p.name)}</option>`).join('')}</select><button class="btn shrink-0" data-act="secadd" data-sec="${k}">+ যোগ</button></div>` : '<p class="text-xs text-black/50 mt-3">সব প্রোডাক্টই এই সেকশনে আছে</p>'}</div>`;
+    <div class="max-h-96 overflow-y-auto">${inS.map(p => `<div class="flex items-center gap-2 py-1.5 border-b"><img src="${esc(p.images?.[0] || '')}" class="w-10 h-12 object-cover rounded bg-gray-100 shrink-0" alt=""><div class="flex-1 min-w-0"><p class="text-sm leading-snug">${esc(p.name)}${k === 'best' && p.bestAuto ? ' <span class="text-xs">🔥 অটো</span>' : ''}</p>${hideNote(p) ? `<p class="text-xs red font-bold">সাইটে দেখাচ্ছে না: ${hideNote(p)}</p>` : ''}</div><button class="btn2 red shrink-0" data-act="secrm" data-id="${p.id}" data-sec="${k}" aria-label="সেকশন থেকে বাদ দিন">✕</button></div>`).join('') || '<p class="text-sm text-black/50 py-2">এই সেকশনে কোনো প্রোডাক্ট নেই</p>'}</div>
+    <div class="mt-3"><input class="inp" data-in="secq" data-sec="${k}" placeholder="🔍 নাম/ব্র্যান্ড লিখে প্রোডাক্ট খুঁজুন…" value="${esc(secQ[k] || '')}" autocomplete="off">${(secQ[k] || '').trim() ? (() => { const tk_ = secQ[k].toLowerCase().trim().split(/\s+/), m = out.filter(p => { const h = ((p.name || '') + ' ' + (p.brand || '') + ' ' + (p.cat || '')).toLowerCase(); return tk_.every(w => h.includes(w)); }).slice(0, 10); return `<div class="mt-2 border rounded-lg">${m.map(p => `<div class="flex items-center gap-2 p-1.5 border-b"><img src="${esc(p.images?.[0] || '')}" class="w-10 h-12 object-cover rounded bg-gray-100 shrink-0" alt=""><p class="flex-1 min-w-0 text-sm leading-snug">${esc(p.name)}</p><button class="btn shrink-0" data-act="secadd2" data-id="${p.id}" data-sec="${k}">+ যোগ</button></div>`).join('') || '<p class="text-xs text-black/50 p-2">কিছু পাওয়া যায়নি (বা আগে থেকেই এই সেকশনে আছে)</p>'}</div>`; })() : ''}</div></div>`;
   }).join('')}</div>
   ${vCats()}`;
 }
-async function setSections(p, arr) {
-  try { await updateDoc(doc(db, 'products', p.id), secFields(arr)); toast('সেকশন আপডেট হয়েছে ✅'); } catch (e) { toast('আপডেট হয়নি: ' + e.code); }
+async function setSections(p, arr, extra) {
+  try { await updateDoc(doc(db, 'products', p.id), { ...secFields(arr), ...(extra || {}) }); toast('সেকশন আপডেট হয়েছে ✅'); } catch (e) { toast('আপডেট হয়নি: ' + e.code); }
 }
 
 /* ---------- ফিচারড ক্যাটাগরি (ওয়েবসাইটের গোল আইকনগুলো) ---------- */
@@ -550,7 +589,10 @@ const A = {
   pedit: b => productForm(D.products.find(p => p.id === b.dataset.id)),
   pdel: async b => { if (confirm('এই প্রোডাক্ট ডিলিট করবেন?')) { await deleteDoc(doc(db, 'products', b.dataset.id)); toast('ডিলিট হয়েছে'); } },
   secadd: b => { const k = b.dataset.sec, id = $('#add-' + k)?.value; if (!id) return toast('আগে প্রোডাক্ট বেছে নিন'); const p = D.products.find(x => x.id === id); if (p) setSections(p, [...secOf(p).filter(x => x !== k), k]); },
-  secrm: b => { const p = D.products.find(x => x.id === b.dataset.id); if (p) setSections(p, secOf(p).filter(x => x !== b.dataset.sec)); },
+  secrm: b => { const p = D.products.find(x => x.id === b.dataset.id); if (p) setSections(p, secOf(p).filter(x => x !== b.dataset.sec), b.dataset.sec === 'best' ? { bestOff: true, bestAuto: false } : undefined); },
+  secadd2: b => { const k = b.dataset.sec, p = D.products.find(x => x.id === b.dataset.id); secQ[k] = ''; if (p) setSections(p, [...secOf(p).filter(x => x !== k), k], k === 'best' ? { bestOff: false, bestAuto: false } : undefined); },
+  absave: async () => { const ab = { on: $('#abOn').checked, count: Math.min(Math.max(+$('#abCount').value || 12, 1), 50), days: +$('#abDays').value }; try { await setDoc(doc(db, 'settings', 'main'), { autoBest: ab }, { merge: true }); toast('সেভ হয়েছে ✅'); } catch (e) { toast('সেভ হয়নি: ' + e.code); } },
+  abrun: () => autoBestRun(true),
   catadd: b => { const k = b.dataset.cat, id = $('#cadd-' + b.dataset.i)?.value; if (!id) return toast('আগে প্রোডাক্ট বেছে নিন'); const p = D.products.find(x => x.id === id); if (p) setCats(p, [...catsOf(p).filter(x => x !== k), k]); },
   catrm: b => { const p = D.products.find(x => x.id === b.dataset.id); if (p) setCats(p, catsOf(p).filter(x => x !== b.dataset.cat)); },
   catmove: b => { const t = $('#cmv-' + b.dataset.i)?.value; if (!t) return toast('আগে ট্রান্সফারের ক্যাটাগরি বেছে নিন'); const p = D.products.find(x => x.id === b.dataset.id); if (p) setCats(p, [...catsOf(p).filter(x => x !== b.dataset.cat && x !== t), t]); },
@@ -652,6 +694,7 @@ document.addEventListener('input', e => {
   const k = e.target.dataset.in;
   if (k === 'pname') { const f = $('#fBrand'); if (f && (!f.value.trim() || f.dataset.auto === '1')) { const b = detectBrand(e.target.value); f.value = b; f.dataset.auto = b ? '1' : ''; } }
   if (k === 'pbrand') e.target.dataset.auto = '';
+  if (k === 'secq') { const sec = e.target.dataset.sec; secQ[sec] = e.target.value; const p = e.target.selectionStart; render(); const n = document.querySelector('[data-in=secq][data-sec="' + sec + '"]'); if (n) { n.focus(); n.setSelectionRange(p, p); } }
   if (k === 'psearch') { pSearch = e.target.value; const p = e.target.selectionStart; render(); const n = $('[data-in=psearch]'); n.focus(); n.setSelectionRange(p, p); }
   if (k === 'osearch') { oSearch = e.target.value; const p = e.target.selectionStart; render(); const n = $('[data-in=osearch]'); n.focus(); n.setSelectionRange(p, p); }
 });
