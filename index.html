@@ -1144,7 +1144,7 @@ function buildOrder(info, t) {
   return {
     id: currentOrderId || (currentOrderId = genOrderId()),
     ...info,
-    lines: t.lines.map((l) => ({ name: l.p.name, qty: l.qty, unit: l.p.offer, total: l.p.offer * l.qty })),
+    lines: t.lines.map((l) => ({ name: l.p.name, qty: l.qty, unit: l.p.offer, total: l.p.offer * l.qty, img: imgUrl(l.p.id) })),
     area: areaKey(), sub: t.sub, discount: t.discount, promo: promoApplied, delivery: t.delivery, total: t.total, time: orderTime()
   };
 }
@@ -1161,6 +1161,27 @@ function buildOrderText(o) {
   return L.join('\n');
 }
 const telegramReady = () => !!(TELEGRAM.botToken && TELEGRAM.chatId);
+// পণ্যের ছবির পূর্ণ লিংক (টেলিগ্রাম/অর্ডারে পাঠানোর জন্য); data: ছবি বাদ
+const imgUrl = (id) => { const u = IMG[id]; if (!u || String(u).startsWith('data:')) return ''; try { return new URL(u, location.href).href; } catch (e) { return ''; } };
+const TG_API = '/api/telegram';   // নিরাপদ পথ: টোকেন সার্ভারে (Vercel) থাকে
+async function tgDirectPhotos(photos) {
+  const base = `https://api.telegram.org/bot${TELEGRAM.botToken}/`;
+  const r = photos.length === 1
+    ? await fetch(base + 'sendPhoto', { method: 'POST', body: new URLSearchParams({ chat_id: TELEGRAM.chatId, photo: photos[0].url, caption: photos[0].caption }) })
+    : await fetch(base + 'sendMediaGroup', { method: 'POST', body: new URLSearchParams({ chat_id: TELEGRAM.chatId, media: JSON.stringify(photos.map((p) => ({ type: 'photo', media: p.url, caption: p.caption }))) }) });
+  const d = await r.json().catch(() => ({})); if (!d.ok) throw new Error(d.description || 'photo failed');
+}
+async function sendOrderToTelegram(order, text) {
+  const photos = order.lines.filter((l) => l.img).slice(0, 10).map((l, i) => ({ url: l.img, caption: `${i + 1}) ${l.name} × ${l.qty}`.slice(0, 200) }));
+  try {
+    const ctrl = new AbortController(), timer = setTimeout(() => ctrl.abort(), 20000);
+    const r = await fetch(TG_API, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ text, photos }), signal: ctrl.signal });
+    clearTimeout(timer); if (r.ok) return;
+  } catch (e) { /* সার্ভার-ফাংশন না থাকলে নিচের সরাসরি পথে যাবে */ }
+  if (!telegramReady()) throw new Error('telegram not configured');
+  await sendToTelegram(text);
+  if (photos.length) { try { await tgDirectPhotos(photos); } catch (e) { console.warn('Telegram photos failed:', e); } }
+}
 async function sendToTelegram(text) {
   const ctrl = new AbortController();
   const timer = setTimeout(() => ctrl.abort(), 15000);
@@ -1193,7 +1214,7 @@ $('#coForm').addEventListener('submit', async (e) => {
   setOrdering(true);
   try {
     await saveOrder(order, t);
-    if (telegramReady()) sendToTelegram(text).catch((x) => console.warn('Telegram failed:', x));
+    sendOrderToTelegram(order, text).catch((x) => console.warn('Telegram failed:', x));
     lastOrderText = text;
     showingSuccess = true;
     cart = {}; promoApplied = ''; promoErr = ''; currentOrderId = null;
@@ -1483,7 +1504,7 @@ async function lookupPromo(code) {
 
 async function saveOrder(o, t) {
   const AZ = window.AZ; if (!AZ) throw new Error('not connected');
-  const items = t.lines.map((l) => ({ pid: l.p.fid || ('p' + l.p.id), name: l.p.name, price: l.p.offer, qty: l.qty }));
+  const items = t.lines.map((l) => ({ pid: l.p.fid || ('p' + l.p.id), name: l.p.name, price: l.p.offer, qty: l.qty, image: imgUrl(l.p.id) }));
   const write = AZ.addDoc(AZ.collection(AZ.db, 'orders'), {
     orderNo: o.id, name: o.name, phone: o.phone, address: o.address, area: o.area, items,
     subtotal: o.sub, delivery: o.delivery, discount: o.discount, promo: o.promo || '', total: o.total,
