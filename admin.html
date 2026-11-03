@@ -317,10 +317,15 @@ function vOffers() {
     <label class="flex items-center gap-2 text-sm pt-2 border-t"><input type="checkbox" data-off="showDisc" ${o.showDisc !== false ? 'checked' : ''}> প্রোডাক্ট কার্ডের ছবিতে ছাড়ের ব্যাজ (যেমন -৩৩%) দেখান</label></div>
   <div class="flex gap-2 max-w-xl mt-3"><button class="btn flex-1" data-act="offsave">সেভ করুন</button><button class="btn2 red" data-act="offreset">ডিফল্টে ফিরুন</button></div>`;
 }
+const DISTRICTS = [["Dhaka", "ঢাকা"], ["Faridpur", "ফরিদপুর"], ["Gazipur", "গাজীপুর"], ["Gopalganj", "গোপালগঞ্জ"], ["Kishoreganj", "কিশোরগঞ্জ"], ["Madaripur", "মাদারীপুর"], ["Manikganj", "মানিকগঞ্জ"], ["Munshiganj", "মুন্সিগঞ্জ"], ["Narayanganj", "নারায়ণগঞ্জ"], ["Narsingdi", "নরসিংদী"], ["Rajbari", "রাজবাড়ী"], ["Shariatpur", "শরীয়তপুর"], ["Tangail", "টাঙ্গাইল"], ["Bandarban", "বান্দরবান"], ["Brahmanbaria", "ব্রাহ্মণবাড়িয়া"], ["Chandpur", "চাঁদপুর"], ["Chattogram", "চট্টগ্রাম"], ["Cumilla", "কুমিল্লা"], ["Coxs Bazar", "কক্সবাজার"], ["Feni", "ফেনী"], ["Khagrachhari", "খাগড়াছড়ি"], ["Lakshmipur", "লক্ষ্মীপুর"], ["Noakhali", "নোয়াখালী"], ["Rangamati", "রাঙ্গামাটি"], ["Bogura", "বগুড়া"], ["Joypurhat", "জয়পুরহাট"], ["Naogaon", "নওগাঁ"], ["Natore", "নাটোর"], ["Chapainawabganj", "চাঁপাইনবাবগঞ্জ"], ["Pabna", "পাবনা"], ["Rajshahi", "রাজশাহী"], ["Sirajganj", "সিরাজগঞ্জ"], ["Bagerhat", "বাগেরহাট"], ["Chuadanga", "চুয়াডাঙ্গা"], ["Jashore", "যশোর"], ["Jhenaidah", "ঝিনাইদহ"], ["Khulna", "খুলনা"], ["Kushtia", "কুষ্টিয়া"], ["Magura", "মাগুরা"], ["Meherpur", "মেহেরপুর"], ["Narail", "নড়াইল"], ["Satkhira", "সাতক্ষীরা"], ["Barguna", "বরগুনা"], ["Barishal", "বরিশাল"], ["Bhola", "ভোলা"], ["Jhalakathi", "ঝালকাঠি"], ["Patuakhali", "পটুয়াখালী"], ["Pirojpur", "পিরোজপুর"], ["Habiganj", "হবিগঞ্জ"], ["Moulvibazar", "মৌলভীবাজার"], ["Sunamganj", "সুনামগঞ্জ"], ["Sylhet", "সিলেট"], ["Dinajpur", "দিনাজপুর"], ["Gaibandha", "গাইবান্ধা"], ["Kurigram", "কুড়িগ্রাম"], ["Lalmonirhat", "লালমনিরহাট"], ["Nilphamari", "নীলফামারী"], ["Panchagarh", "পঞ্চগড়"], ["Rangpur", "রংপুর"], ["Thakurgaon", "ঠাকুরগাঁও"], ["Jamalpur", "জামালপুর"], ["Mymensingh", "ময়মনসিংহ"], ["Netrokona", "নেত্রকোণা"], ["Sherpur", "শেরপুর"]];
 function vSettings() {
   const s = D.settings, f = (k, l, t = 'text', d = '') => `<label class="block text-sm font-semibold">${l}<input class="inp mt-1 font-normal" type="${t}" data-s="${k}" value="${esc(s[k] ?? d)}"></label>`;
   return `<div class="card p-4 space-y-3 max-w-xl"><h3 class="font-bold">ডেলিভারি চার্জ</h3>
-    ${f('feeCtg', 'চট্টগ্রাম (৳)', 'number', 60)}${f('feeDhaka', 'ঢাকা (৳)', 'number', 99)}${f('feeOther', 'সারাদেশ (৳)', 'number', 120)}${f('freeShipAt', 'এই টাকার অর্ডারে ডেলিভারি ফ্রি (০ = বন্ধ)', 'number', 1000)}
+    <p class="text-xs text-black/60 -mt-1">কাস্টমার চেকআউটে ৬৪ জেলার একটি বেছে নেবে। নিচের তিনটি হলো ডিফল্ট চার্জ; কোনো জেলার জন্য আলাদা চার্জ দিতে চাইলে নিচের তালিকায় সেই জেলায় লিখুন।</p>
+    ${f('feeDhaka', 'ঢাকা জেলা (৳)', 'number', 99)}${f('feeCtg', 'চট্টগ্রাম জেলা (৳)', 'number', 60)}${f('feeOther', 'বাকি সব জেলা (৳)', 'number', 120)}${f('freeShipAt', 'এই টাকার অর্ডারে ডেলিভারি ফ্রি (০ = বন্ধ)', 'number', 1000)}
+    <details class="border rounded-xl p-3"><summary class="font-bold cursor-pointer">জেলাভিত্তিক আলাদা চার্জ (ঐচ্ছিক) — ৬৪ জেলা</summary>
+      <p class="text-xs text-black/60 mt-2">ঘর ফাঁকা রাখলে ওই জেলায় ডিফল্ট চার্জ (উপরের তিনটির একটি) প্রযোজ্য হবে। ফ্রি ডেলিভারির জন্য ০ লিখুন।</p>
+      <div class="grid grid-cols-2 gap-2 mt-3">${DISTRICTS.map(([k, n]) => `<label class="text-xs font-semibold">${n} <span class="text-black/40 font-normal">${k}</span><input class="inp mt-0.5 font-normal" type="number" min="0" data-df="${k}" value="${(s.districtFees || {})[k] ?? ''}" placeholder="${k === 'Dhaka' ? (s.feeDhaka ?? 99) : k === 'Chattogram' ? (s.feeCtg ?? 60) : (s.feeOther ?? 120)}"></label>`).join('')}</div></details>
     <h3 class="font-bold pt-2">যোগাযোগ</h3>
     ${f('whatsapp', 'WhatsApp নম্বর (দেশের কোডসহ)', 'text', '8801560035645')}${f('messenger', 'Messenger লিংক', 'text', 'https://www.facebook.com/share/1ceh2uJvxJ/')}${f('phone', 'ফোন নম্বর', 'text', '01560035645')}${f('facebook', 'Facebook পেজ লিংক')}${f('instagram', 'Instagram লিংক')}
     <button class="btn w-full" data-act="ssave">সেভ করুন</button></div>
@@ -343,6 +348,7 @@ function productForm(p) {
     <label class="text-sm font-semibold">অফার দাম (৳)<input id="fOff" type="number" class="inp mt-1 font-normal" value="${p?.offer ?? ''}"></label>
     <label class="text-sm font-semibold">স্টক<input id="fStock" type="number" class="inp mt-1 font-normal" value="${p?.stock ?? 50}"></label>
     <div class="text-sm pt-6"><label class="block"><input id="fActive" type="checkbox" ${p?.active === false ? '' : 'checked'}> সাইটে দেখান</label></div>
+    <label class="col-span-2 text-sm font-semibold">🎨 শেড (মেকআপ আইটেমের জন্য, ঐচ্ছিক) <span class="text-xs font-normal text-black/50">প্রতি লাইনে একটি শেড। রঙের কোড দিলে কাস্টমার রঙের গোল দাগ দেখবে। যেমন: <code>01 Ivory | #F3D9C4</code> — কোড না দিলেও চলবে</span><textarea id="fShades" rows="4" class="inp mt-1 font-normal" placeholder="01 Ivory | #F3D9C4&#10;02 Beige | #E3B98F&#10;03 Rose">${esc((p?.shades || []).map(x => x.name + (x.color ? ' | ' + x.color : '')).join('\n'))}</textarea></label>
     <label class="col-span-2 text-sm font-semibold">বিবরণ<textarea id="fDesc" rows="3" class="inp mt-1 font-normal">${esc(p?.desc)}</textarea></label>
     <div class="col-span-2"><p class="text-sm font-semibold mb-1">ছবি (প্রথমটি মূল ছবি, সর্বোচ্চ ৫টি)</p><div id="fImgs" class="flex gap-2 flex-wrap"></div><input type="file" accept="image/*" multiple data-in="pimgs" class="mt-2 text-sm"></div></div>
     <div class="flex gap-2 mt-4"><button class="btn flex-1" data-act="psave">সেভ করুন</button><button class="btn2" data-act="close">বাতিল</button></div>`);
@@ -363,7 +369,7 @@ function promoForm(p) {
 function orderModal(o) {
   openModal(`<div class="flex justify-between items-start"><div><h2 class="font-bold text-lg">${esc(o.orderNo)}</h2><p class="text-xs text-black/60">${dt(o.createdAt)}</p></div>${badge(o.status)}</div>
   <div class="mt-3 text-sm space-y-1"><p>👤 <b>${esc(o.name)}</b> · 📞 ${esc(o.phone)}</p><p>📍 ${esc(o.address)}${o.area ? ` <span class="text-black/50">(${esc(o.area)})</span>` : ''}</p>${o.note ? `<p>📝 ${esc(o.note)}</p>` : ''}</div>
-  <div class="mt-3 border rounded-xl divide-y text-sm">${(o.items || []).map(i => `<div class="p-2 flex gap-2 items-center">${(() => { const im = i.image || D.products.find(p => p.id === i.pid)?.images?.[0] || ''; return im ? `<img src="${esc(im)}" class="w-10 h-12 object-cover rounded">` : ''; })()}<span class="flex-1">${esc(i.name)}<br><span class="text-black/60">${tk(i.price)} × ${bn(i.qty)}</span></span><b>${tk(i.price * i.qty)}</b></div>`).join('')}
+  <div class="mt-3 border rounded-xl divide-y text-sm">${(o.items || []).map(i => `<div class="p-2 flex gap-2 items-center">${(() => { const im = i.image || D.products.find(p => p.id === i.pid)?.images?.[0] || ''; return im ? `<img src="${esc(im)}" class="w-10 h-12 object-cover rounded">` : ''; })()}<span class="flex-1">${esc(i.name)}${i.shade ? ` <b class="text-pink-700">🎨 ${esc(i.shade)}</b>` : ''}<br><span class="text-black/60">${tk(i.price)} × ${bn(i.qty)}</span></span><b>${tk(i.price * i.qty)}</b></div>`).join('')}
     <div class="p-2 flex justify-between"><span>সাবটোটাল</span><span>${tk(o.subtotal)}</span></div><div class="p-2 flex justify-between"><span>ডেলিভারি</span><span>${tk(o.delivery)}</span></div>
     ${o.discount ? `<div class="p-2 flex justify-between"><span>ছাড় ${o.promo ? '(' + esc(o.promo) + ')' : ''}</span><span>-${tk(o.discount)}</span></div>` : ''}<div class="p-2 flex justify-between font-bold"><span>মোট</span><span>${tk(o.total)}</span></div></div>
   <label class="block mt-3 text-sm font-semibold">স্ট্যাটাস<select id="oStatus" class="inp mt-1 font-normal">${Object.entries(ST).map(([k, v]) => `<option value="${k}" ${o.status === k ? 'selected' : ''}>${v[0]}</option>`).join('')}</select></label>
@@ -375,7 +381,7 @@ function invoice(o) {
   w.document.write(`<html><head><meta charset="utf-8"><title>${esc(o.orderNo)}</title><style>body{font-family:'Noto Sans Bengali',sans-serif;max-width:700px;margin:20px auto;padding:10px;color:#111}table{width:100%;border-collapse:collapse;margin-top:12px}td,th{border-bottom:1px solid #ddd;padding:8px;text-align:left}.r{text-align:right}</style></head><body>
   <h2>Azaan — ইনভয়েস</h2><p>অর্ডার: <b>${esc(o.orderNo)}</b><br>তারিখ: ${dt(o.createdAt)}<br>${s.phone ? 'ফোন: ' + esc(s.phone) : ''}</p><hr>
   <p><b>${esc(o.name)}</b><br>${esc(o.phone)}<br>${esc(o.address)}</p>
-  <table><tr><th>পণ্য</th><th class="r">দাম</th><th class="r">পরিমাণ</th><th class="r">মোট</th></tr>${(o.items || []).map(i => `<tr><td>${esc(i.name)}</td><td class="r">${tk(i.price)}</td><td class="r">${bn(i.qty)}</td><td class="r">${tk(i.price * i.qty)}</td></tr>`).join('')}
+  <table><tr><th>পণ্য</th><th class="r">দাম</th><th class="r">পরিমাণ</th><th class="r">মোট</th></tr>${(o.items || []).map(i => `<tr><td>${esc(i.name)}${i.shade ? ' — শেড: ' + esc(i.shade) : ''}</td><td class="r">${tk(i.price)}</td><td class="r">${bn(i.qty)}</td><td class="r">${tk(i.price * i.qty)}</td></tr>`).join('')}
   <tr><td colspan="3" class="r">সাবটোটাল</td><td class="r">${tk(o.subtotal)}</td></tr><tr><td colspan="3" class="r">ডেলিভারি</td><td class="r">${tk(o.delivery)}</td></tr>${o.discount ? `<tr><td colspan="3" class="r">ছাড়</td><td class="r">-${tk(o.discount)}</td></tr>` : ''}<tr><td colspan="3" class="r"><b>সর্বমোট (ক্যাশ অন ডেলিভারি)</b></td><td class="r"><b>${tk(o.total)}</b></td></tr></table>
   <p style="margin-top:30px">ধন্যবাদ আপনার অর্ডারের জন্য!</p><script>onload=()=>print()<\/script></body></html>`); w.document.close();
 }
@@ -518,6 +524,7 @@ function buildCatalog() {
     .map(p => {
       const it = { fid: p.id, name: p.name, cat: p.cat || '', regular: +p.regular || +p.offer, offer: +p.offer, stock: 1, desc: p.desc || '', brand: p.brand || '', images: (p.images || []).filter(Boolean), sections: secOf(p) };
       if (Array.isArray(p.featCats)) it.featCats = p.featCats;
+      if (Array.isArray(p.shades) && p.shades.length) it.shades = p.shades;
       return it;
     });
 }
@@ -642,7 +649,8 @@ const A = {
     const secs = [...document.querySelectorAll('[data-secchk]:checked')].map(x => x.dataset.secchk);
     const fcats = [...document.querySelectorAll('[data-catchk]:checked')].map(x => x.dataset.catchk), newCat = $('#fCat').value.trim();
     if (!form.id && newCat && !fcats.includes(newCat)) fcats.push(newCat);
-    const d = { name: $('#fName').value.trim(), brand: canonBrand($('#fBrand').value) || detectBrand($('#fName').value), cat: $('#fCat').value.trim(), ...secFields(secs), featCats: fcats, regular: +$('#fReg').value, offer: +$('#fOff').value, stock: +$('#fStock').value || 0, desc: $('#fDesc').value.trim(), active: $('#fActive').checked, images: form.images };
+    const d = { name: $('#fName').value.trim(), brand: canonBrand($('#fBrand').value) || detectBrand($('#fName').value), cat: $('#fCat').value.trim(), ...secFields(secs), featCats: fcats, regular: +$('#fReg').value, offer: +$('#fOff').value, stock: +$('#fStock').value || 0, desc: $('#fDesc').value.trim(), active: $('#fActive').checked, images: form.images,
+      shades: $('#fShades').value.split('\n').map(l => l.trim()).filter(Boolean).map(l => { const [n, c] = l.split('|').map(x => x.trim()); return { name: n, color: /^#[0-9a-f]{3,8}$/i.test(c || '') ? c : '' }; }).filter(x => x.name).slice(0, 40) };
     if (!d.name || !d.offer) return toast('নাম ও অফার দাম দিন');
     if (!d.regular) d.regular = d.offer;
     if (d.images.join('').length > 950000) return toast('ছবির সাইজ বেশি, কয়েকটি ছবি বাদ দিন');
@@ -679,7 +687,10 @@ const A = {
   bdel: async b => { if (confirm('ব্যানার ডিলিট করবেন?')) await deleteDoc(doc(db, 'banners', b.dataset.id)); },
   ssave: async () => {
     const s = {}; document.querySelectorAll('[data-s]').forEach(i => { s[i.dataset.s] = i.type === 'number' ? +i.value : i.value.trim(); });
-    await setDoc(doc(db, 'settings', 'main'), s, { merge: true }); toast('সেটিংস সেভ হয়েছে ✅');
+    const df = {}; document.querySelectorAll('[data-df]').forEach(i => { if (i.value.trim() !== '' && !isNaN(+i.value)) df[i.dataset.df] = +i.value; });
+    await setDoc(doc(db, 'settings', 'main'), s, { merge: true });
+    await updateDoc(doc(db, 'settings', 'main'), { districtFees: df });      // পুরো তালিকা বদলে দেয়, তাই ফাঁকা করা জেলা আবার ডিফল্টে ফেরে
+    toast('সেটিংস সেভ হয়েছে ✅');
   },
   passchg: async () => { const p = $('#newPass').value; if (p.length < 8) return toast('কমপক্ষে ৮ অক্ষর দিন'); try { await updatePassword(auth.currentUser, p); toast('পাসওয়ার্ড বদলেছে ✅'); $('#newPass').value = ''; } catch { toast('লগআউট করে আবার লগইন করে চেষ্টা করুন'); } }
 };

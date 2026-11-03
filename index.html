@@ -419,12 +419,11 @@
             <p class="hidden text-sm text-red-600 mt-1" data-err="name"></p>
           </div>
           <div>
-            <label for="coArea" class="block text-sm font-semibold mb-1.5">ডেলিভারি এলাকা <span class="text-red-600">*</span></label>
+            <label for="coArea" class="block text-sm font-semibold mb-1.5">জেলা নির্বাচন করুন <span class="text-red-600">*</span></label>
             <select id="coArea" class="co-input w-full rounded-xl border border-black/20 bg-white px-4 py-3 text-base outline-none focus:border-leaf-600">
-              <option value="ctg">চট্টগ্রাম</option>
-              <option value="dhaka">ঢাকা</option>
-              <option value="other" selected>ঢাকা ও চট্টগ্রামের বাইরে (সারাদেশ)</option>
+              <option value="">— আপনার জেলা বেছে নিন —</option>
             </select>
+            <p class="hidden text-sm text-red-600 mt-1" data-err="area"></p>
           </div>
           <div>
             <label for="coAddress" class="block text-sm font-semibold mb-1.5">ঠিকানা <span class="text-red-600">*</span></label>
@@ -717,7 +716,7 @@ const DEPTS = [
 
 /* ---------- State ---------- */
 let cart = {}, wish = new Set(), activeCat = 'All', query = '', sortBy = 'default', showWish = false;
-let qvId = null, qvQty = 1;
+let qvId = null, qvQty = 1, qvShade = '';
 let promoApplied = '', promoErr = '', showingSuccess = false, ordering = false, currentOrderId = null, lastOrderText = '';
 try {
   cart = JSON.parse(localStorage.getItem('azn2_cart') || '{}');
@@ -731,6 +730,10 @@ function persist() {
 }
 
 const byId = (id) => PRODUCTS.find((p) => p.id === id);
+// কার্টের কী: শেড থাকলে "আইডি|শেডের নাম", না থাকলে শুধু আইডি
+const ck = (id, shade) => (shade ? id + '|' + shade : String(id));
+const pk = (k) => { k = String(k); const i = k.indexOf('|'); return i < 0 ? { id: +k, shade: '' } : { id: +k.slice(0, i), shade: k.slice(i + 1) }; };
+const hasShades = (p) => !!(p && p.shades && p.shades.length);
 const pct = (p) => Math.round((1 - p.offer / p.regular) * 100);
 const isBest = (id) => BEST_SELLER_IDS.includes(id);
 const MAXD = Math.max(...PRODUCTS.map(pct));
@@ -808,10 +811,12 @@ function productCard(p) {
           ${d > 0 ? `<span class="text-xs sm:text-sm text-black/40 line-through">${taka(p.regular)}</span>` : ''}
         </div>
         <p class="text-xs text-leaf-800 font-semibold mt-0.5 min-h-[1rem]">${d > 0 ? 'You save ' + taka(p.regular - p.offer) : ''}</p>
-        <button data-add="${p.id}" class="mt-3 sm:mt-4 w-full py-2.5 rounded-full bg-leaf-500 hover:bg-ink hover:text-white text-ink text-sm font-bold transition flex items-center justify-center gap-2">
+        ${hasShades(p) ? `<p class="text-[11px] text-leaf-800 font-semibold mt-1.5">🎨 ${p.shades.length}টি শেড আছে</p>
+        <button data-view="${p.id}" class="mt-2 w-full py-2.5 rounded-full bg-leaf-500 hover:bg-ink hover:text-white text-ink text-sm font-bold transition flex items-center justify-center gap-2">শেড বেছে নিন</button>`
+        : `<button data-add="${p.id}" class="mt-3 sm:mt-4 w-full py-2.5 rounded-full bg-leaf-500 hover:bg-ink hover:text-white text-ink text-sm font-bold transition flex items-center justify-center gap-2">
           <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2.4" viewBox="0 0 24 24"><path stroke-linecap="round" d="M12 5v14M5 12h14"/></svg>
           Add to Cart
-        </button>
+        </button>`}
       </div>
     </article>`;
 }
@@ -882,6 +887,8 @@ function renderQuick() {
         </div>
         ${d > 0 ? `<p class="text-sm text-leaf-800 font-semibold mt-1">You save ${taka(p.regular - p.offer)} (${d}%)</p>` : ''}
         <p class="text-sm text-black/65 mt-4 leading-relaxed">${esc(p.desc)}</p>
+        ${hasShades(p) ? `<div class="mt-4"><p class="text-sm font-bold">শেড বেছে নিন <span class="text-red-600">*</span>${qvShade ? `<span class="font-medium text-leaf-800"> — ${esc(qvShade)}</span>` : ''}</p>
+          <div class="mt-2 flex flex-wrap gap-2">${p.shades.map((sh, i) => `<button type="button" data-qvshade="${i}" aria-pressed="${qvShade === sh.name}" class="inline-flex items-center gap-2 px-3 py-2 rounded-full border text-sm font-semibold transition ${qvShade === sh.name ? 'bg-ink text-white border-ink' : 'bg-white border-black/20 hover:border-ink'}">${sh.color ? `<span class="w-4 h-4 rounded-full border border-black/20 shrink-0" style="background:${esc(sh.color)}"></span>` : ''}${esc(sh.name)}</button>`).join('')}</div></div>` : ''}
         <ul class="mt-4 text-sm text-black/65 space-y-1.5">
           <li>✔ 100% authentic, checked before dispatch</li>
           <li>✔ Cash on Delivery available</li>
@@ -902,7 +909,7 @@ function renderQuick() {
     </div>`;
 }
 function openQuick(id) {
-  qvId = id; qvQty = 1; renderQuick();
+  qvId = id; qvQty = 1; qvShade = ''; renderQuick();
   $('#qvOverlay').classList.remove('hidden');
   document.body.style.overflow = 'hidden';
 }
@@ -914,8 +921,8 @@ function closeQuick() {
 /* ---------- Cart ---------- */
 function totals() {
   let count = 0, sub = 0, reg = 0;
-  for (const [id, qty] of Object.entries(cart)) {
-    const p = byId(+id); if (!p) continue;
+  for (const [key, qty] of Object.entries(cart)) {
+    const p = byId(pk(key).id); if (!p) continue;
     count += qty; sub += p.offer * qty; reg += p.regular * qty;
   }
   return { count, sub, saved: reg - sub };
@@ -935,21 +942,22 @@ function renderCart() {
   $('#checkoutBtn').disabled = t.count === 0;
   $('#checkoutBtn').classList.toggle('opacity-50', t.count === 0);
 
-  const entries = Object.entries(cart).filter(([id]) => byId(+id));
-  $('#cartItems').innerHTML = entries.length ? entries.map(([id, qty]) => {
-    const p = byId(+id);
+  const entries = Object.entries(cart).filter(([key]) => byId(pk(key).id));
+  $('#cartItems').innerHTML = entries.length ? entries.map(([key, qty]) => {
+    const { id: pid, shade } = pk(key), p = byId(pid);
     return `<div class="flex gap-3 items-center">
       <img src="${IMG[p.id]}" alt="${esc(p.name)}" class="w-16 h-20 shrink-0 rounded-xl object-cover bg-leaf-50">
       <div class="flex-1 min-w-0">
         <p class="text-sm font-semibold leading-snug">${esc(p.name)}</p>
+        ${shade ? `<p class="text-xs font-semibold text-leaf-800 mt-0.5">🎨 শেড: ${esc(shade)}</p>` : ''}
         <p class="text-sm mt-0.5"><span class="text-leaf-800 font-bold">${taka(p.offer)}</span> ${pct(p) > 0 ? `<span class="text-xs text-black/40 line-through">${taka(p.regular)}</span>` : ''}</p>
         <div class="mt-1.5 inline-flex items-center border border-black/15 rounded-full text-sm bg-white">
-          <button data-dec="${p.id}" class="w-8 h-8 grid place-items-center hover:text-leaf-700" aria-label="Decrease">−</button>
+          <button data-dec="${esc(key)}" class="w-8 h-8 grid place-items-center hover:text-leaf-700" aria-label="Decrease">−</button>
           <span class="w-6 text-center font-medium">${qty}</span>
-          <button data-inc="${p.id}" class="w-8 h-8 grid place-items-center hover:text-leaf-700" aria-label="Increase">+</button>
+          <button data-inc="${esc(key)}" class="w-8 h-8 grid place-items-center hover:text-leaf-700" aria-label="Increase">+</button>
         </div>
       </div>
-      <button data-rm="${p.id}" class="p-2 text-gray-400 hover:text-red-500" aria-label="Remove">🗑</button>
+      <button data-rm="${esc(key)}" class="p-2 text-gray-400 hover:text-red-500" aria-label="Remove">🗑</button>
     </div>`;
   }).join('') : `<div class="h-full grid place-items-center text-center text-black/60 py-16">
       <div><div class="text-5xl mb-3">🌿</div><p class="font-semibold">Your cart is empty</p><p class="text-sm mt-1">Add something lovely for your hair!</p></div></div>`;
@@ -965,8 +973,9 @@ function toast(msg) {
   clearTimeout(toast._t);
   toast._t = setTimeout(() => t.classList.add('opacity-0', 'translate-y-4'), 2400);
 }
-function addToCart(id, qty = 1) {
-  cart[id] = (cart[id] || 0) + qty;
+function addToCart(id, qty = 1, shade = '') {
+  const k = ck(id, shade);
+  cart[k] = (cart[k] || 0) + qty;
   renderCart(); bump($('#cartCount'));
   toast('Added to cart ✓');
 }
@@ -1007,7 +1016,7 @@ window.addEventListener('hashchange', route);
    চেকআউট
    ===================================================================== */
 function checkoutTotals() {
-  const lines = Object.entries(cart).map(([id, qty]) => ({ p: byId(+id), qty })).filter((l) => l.p);
+  const lines = Object.entries(cart).map(([key, qty]) => { const k = pk(key); return { key, p: byId(k.id), shade: k.shade, qty }; }).filter((l) => l.p);
   const sub = lines.reduce((s, l) => s + l.p.offer * l.qty, 0);
   const count = lines.reduce((s, l) => s + l.qty, 0);
   const promo = promoApplied ? PROMO_CODES[promoApplied] : null;
@@ -1028,19 +1037,20 @@ function renderCheckout() {
   if (!showForm) return;
 
   // পণ্যের তালিকা
-  $('#coItems').innerHTML = t.lines.map(({ p, qty }) => `
+  $('#coItems').innerHTML = t.lines.map(({ p, qty, key, shade }) => `
     <li class="flex gap-3 py-4">
       <img src="${IMG[p.id]}" alt="${esc(p.name)}" class="w-16 h-20 shrink-0 rounded-xl object-cover bg-leaf-50">
       <div class="flex-1 min-w-0">
         <p class="text-sm font-semibold leading-snug">${esc(p.name)}</p>
+        ${shade ? `<p class="text-xs font-semibold text-leaf-800 mt-0.5">🎨 শেড: ${esc(shade)}</p>` : ''}
         <p class="text-xs text-black/55 mt-1">প্রতিটি ${tk(p.offer)}${pct(p) > 0 ? ` <s class="text-black/35">${tk(p.regular)}</s>` : ''}</p>
         <div class="mt-2 flex items-center gap-3">
           <div class="inline-flex items-center border border-black/15 rounded-full text-sm bg-white" role="group" aria-label="পরিমাণ">
-            <button type="button" data-dec="${p.id}" class="w-8 h-8 grid place-items-center hover:text-leaf-700" aria-label="কমান">−</button>
+            <button type="button" data-dec="${esc(key)}" class="w-8 h-8 grid place-items-center hover:text-leaf-700" aria-label="কমান">−</button>
             <span class="min-w-[2.25rem] text-center font-semibold">${bn(qty)} টি</span>
-            <button type="button" data-inc="${p.id}" class="w-8 h-8 grid place-items-center hover:text-leaf-700" aria-label="বাড়ান">+</button>
+            <button type="button" data-inc="${esc(key)}" class="w-8 h-8 grid place-items-center hover:text-leaf-700" aria-label="বাড়ান">+</button>
           </div>
-          <button type="button" data-rm="${p.id}" class="text-xs text-red-600 underline">সরান</button>
+          <button type="button" data-rm="${esc(key)}" class="text-xs text-red-600 underline">সরান</button>
         </div>
       </div>
       <p class="font-extrabold text-sm whitespace-nowrap">${tk(p.offer * qty)}</p>
@@ -1101,7 +1111,7 @@ function normPhone(raw) {
 }
 function setFieldError(field, message) {
   const el = $(`[data-err="${field}"]`);
-  const input = { name: $('#coName'), address: $('#coAddress'), phone: $('#coPhone') }[field];
+  const input = { name: $('#coName'), area: $('#coArea'), address: $('#coAddress'), phone: $('#coPhone') }[field];
   el.textContent = message || '';
   el.classList.toggle('hidden', !message);
   if (message) input.setAttribute('aria-invalid', 'true'); else input.removeAttribute('aria-invalid');
@@ -1111,13 +1121,14 @@ function validateForm() {
   const address = $('#coAddress').value.trim();
   const phone = normPhone($('#coPhone').value);
   const errs = {};
+  if (!$('#coArea').value) errs.area = 'আপনার জেলা নির্বাচন করুন।';
   if (name.length < 2) errs.name = 'আপনার নাম লিখুন।';
   if (address.length < 10) errs.address = 'সম্পূর্ণ ঠিকানা লিখুন (বাসা/রোড, এলাকা, থানা ও জেলা)।';
   if (!/^01[3-9]\d{8}$/.test(phone)) errs.phone = 'সঠিক মোবাইল নাম্বার দিন (যেমন: 01XXXXXXXXX)।';
-  ['name', 'address', 'phone'].forEach((f) => setFieldError(f, errs[f]));
-  const first = ['name', 'address', 'phone'].find((f) => errs[f]);
+  ['name', 'area', 'address', 'phone'].forEach((f) => setFieldError(f, errs[f]));
+  const first = ['name', 'area', 'address', 'phone'].find((f) => errs[f]);
   if (first) {
-    const el = { name: $('#coName'), address: $('#coAddress'), phone: $('#coPhone') }[first];
+    const el = { name: $('#coName'), area: $('#coArea'), address: $('#coAddress'), phone: $('#coPhone') }[first];
     el.scrollIntoView({ behavior: 'smooth', block: 'center' }); el.focus({ preventScroll: true });
     return null;
   }
@@ -1128,6 +1139,7 @@ function validateForm() {
     setFieldError({ coName: 'name', coAddress: 'address', coPhone: 'phone' }[id], '');
   });
 });
+document.getElementById('coArea').addEventListener('change', () => setFieldError('area', ''));
 $('#coPromo').addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); applyOrClearPromo(); } });
 $('#promoBtn').addEventListener('click', applyOrClearPromo);
 
@@ -1144,17 +1156,17 @@ function buildOrder(info, t) {
   return {
     id: currentOrderId || (currentOrderId = genOrderId()),
     ...info,
-    lines: t.lines.map((l) => ({ name: l.p.name, qty: l.qty, unit: l.p.offer, total: l.p.offer * l.qty, img: imgUrl(l.p.id) })),
-    area: areaKey(), sub: t.sub, discount: t.discount, promo: promoApplied, delivery: t.delivery, total: t.total, time: orderTime()
+    lines: t.lines.map((l) => ({ name: l.p.name, shade: l.shade || '', qty: l.qty, unit: l.p.offer, total: l.p.offer * l.qty, img: imgUrl(l.p.id), src: imgSrc(l.p.id) })),
+    area: districtBn(areaKey()), areaKey: areaKey(), sub: t.sub, discount: t.discount, promo: promoApplied, delivery: t.delivery, total: t.total, time: orderTime()
   };
 }
-function buildOrderText(o) {
+function buildOrderText(o, lim) {
   const L = [
     `🛍️ নতুন অর্ডার — ${o.id}`, '',
-    `👤 নাম: ${o.name}`, `📞 মোবাইল: ${o.phone}`, `📍 ঠিকানা: ${o.address}`, '',
+    `👤 নাম: ${o.name}`, `📞 মোবাইল: ${o.phone}`, `🏙️ জেলা: ${o.area}`, `📍 ঠিকানা: ${o.address}`, '',
     '📦 অর্ডারের পণ্য:'
   ];
-  o.lines.forEach((l, i) => L.push(`${i + 1}) ${l.name} — ${l.qty} পিস × ${l.unit}৳ = ${l.total}৳`));
+  o.lines.forEach((l, i) => { const nm = lim && l.name.length > lim ? l.name.slice(0, lim - 1) + '…' : l.name; L.push(`${i + 1}) ${nm}${l.shade ? ` [শেড: ${l.shade}]` : ''} — ${l.qty} পিস × ${l.unit}৳ = ${l.total}৳`); });
   L.push('', `পণ্যের মূল্য: ${o.sub}৳`);
   if (o.discount > 0) L.push(`প্রমো ছাড় (${o.promo}): -${o.discount}৳`);
   L.push(`ডেলিভারি চার্জ: ${o.delivery === 0 ? 'ফ্রি' : o.delivery + '৳'}`, `💰 সর্বমোট বিল: ${o.total}৳`, '💵 পেমেন্ট: ক্যাশ অন ডেলিভারি', `🕒 ${o.time}`);
@@ -1163,24 +1175,36 @@ function buildOrderText(o) {
 const telegramReady = () => !!(TELEGRAM.botToken && TELEGRAM.chatId);
 // পণ্যের ছবির পূর্ণ লিংক (টেলিগ্রাম/অর্ডারে পাঠানোর জন্য); data: ছবি বাদ
 const imgUrl = (id) => { const u = IMG[id]; if (!u || String(u).startsWith('data:')) return ''; try { return new URL(u, location.href).href; } catch (e) { return ''; } };
-const TG_API = '/api/telegram';   // নিরাপদ পথ: টোকেন সার্ভারে (Vercel) থাকে
-async function tgDirectPhotos(photos) {
-  const base = `https://api.telegram.org/bot${TELEGRAM.botToken}/`;
-  const r = photos.length === 1
-    ? await fetch(base + 'sendPhoto', { method: 'POST', body: new URLSearchParams({ chat_id: TELEGRAM.chatId, photo: photos[0].url, caption: photos[0].caption }) })
-    : await fetch(base + 'sendMediaGroup', { method: 'POST', body: new URLSearchParams({ chat_id: TELEGRAM.chatId, media: JSON.stringify(photos.map((p) => ({ type: 'photo', media: p.url, caption: p.caption }))) }) });
-  const d = await r.json().catch(() => ({})); if (!d.ok) throw new Error(d.description || 'photo failed');
+// ছবির উৎস: পূর্ণ লিংক অথবা data: ছবি (data: ছবি সরাসরি ফাইল হিসেবে আপলোড হয়)
+const imgSrc = (id) => { const u = IMG[id]; if (!u || u === NO_IMG) return ''; if (String(u).startsWith('data:')) return u.length < 6000000 ? u : ''; return imgUrl(id); };
+// টেলিগ্রামের ক্যাপশন সীমা ১০২৪ অক্ষর: বেশি হলে পণ্যের নাম ছোট করে এক বার্তাতেই আঁটানো হয়
+function fitCaption(o) {
+  for (const lim of [0, 45, 32, 24, 16]) { const t = buildOrderText(o, lim); if (t.length <= 1000) return t; }
+  return buildOrderText(o, 16).slice(0, 990) + '…\n(বাকি তথ্য এডমিন প্যানেলে)';
 }
+// অর্ডারের লেখা + ছবি = একটাই বার্তা (ছবির অ্যালবামের ক্যাপশনে অর্ডারের বিবরণ)
 async function sendOrderToTelegram(order, text) {
-  const photos = order.lines.filter((l) => l.img).slice(0, 10).map((l, i) => ({ url: l.img, caption: `${i + 1}) ${l.name} × ${l.qty}`.slice(0, 200) }));
-  try {
-    const ctrl = new AbortController(), timer = setTimeout(() => ctrl.abort(), 20000);
-    const r = await fetch(TG_API, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ text, photos }), signal: ctrl.signal });
-    clearTimeout(timer); if (r.ok) return;
-  } catch (e) { /* সার্ভার-ফাংশন না থাকলে নিচের সরাসরি পথে যাবে */ }
   if (!telegramReady()) throw new Error('telegram not configured');
-  await sendToTelegram(text);
-  if (photos.length) { try { await tgDirectPhotos(photos); } catch (e) { console.warn('Telegram photos failed:', e); } }
+  const photos = order.lines.filter((l) => l.src).slice(0, 10);
+  if (!photos.length) return sendToTelegram(text);
+  try {
+    const base = `https://api.telegram.org/bot${TELEGRAM.botToken}/`, caption = fitCaption(order), fd = new FormData();
+    fd.append('chat_id', TELEGRAM.chatId);
+    const refs = [];
+    for (let i = 0; i < photos.length; i++) {
+      const src = photos[i].src;
+      if (src.startsWith('data:')) { fd.append('f' + i, await (await fetch(src)).blob(), 'p' + i + '.jpg'); refs.push('attach://f' + i); }
+      else refs.push(src);
+    }
+    let r;
+    if (refs.length === 1) { fd.append('photo', refs[0]); fd.append('caption', caption); r = await fetch(base + 'sendPhoto', { method: 'POST', body: fd }); }
+    else { fd.append('media', JSON.stringify(refs.map((m, i) => i === 0 ? { type: 'photo', media: m, caption } : { type: 'photo', media: m }))); r = await fetch(base + 'sendMediaGroup', { method: 'POST', body: fd }); }
+    const d = await r.json().catch(() => ({}));
+    if (!d.ok) throw new Error(d.description || 'photo failed');
+  } catch (e) {
+    console.warn('Telegram photo message failed, sending text only:', e);
+    await sendToTelegram(text);       // ছবি না গেলেও অর্ডার যেন অবশ্যই পৌঁছায়
+  }
 }
 async function sendToTelegram(text) {
   const ctrl = new AbortController();
@@ -1256,6 +1280,7 @@ function renderSuccess(o, demo) {
       <dl class="mt-3 text-sm">
         ${line('নাম', esc(o.name))}
         ${line('মোবাইল', esc(bn(o.phone)))}
+        ${line('জেলা', esc(o.area))}
         ${line('ঠিকানা', esc(o.address).replace(/\n/g, '<br>'))}
       </dl>
     </section>
@@ -1263,7 +1288,7 @@ function renderSuccess(o, demo) {
     <section class="mt-5 bg-white rounded-2xl border border-black/10 p-5 sm:p-6">
       <h2 class="text-lg font-extrabold">আপনার অর্ডার</h2>
       <ul class="mt-2 divide-y divide-black/10 text-sm">
-        ${o.lines.map((l) => `<li class="flex justify-between gap-4 py-2.5"><span>${esc(l.name)} <span class="text-black/50">× ${bn(l.qty)}</span></span><span class="font-semibold whitespace-nowrap">${tk(l.total)}</span></li>`).join('')}
+        ${o.lines.map((l) => `<li class="flex justify-between gap-4 py-2.5"><span>${esc(l.name)}${l.shade ? ` <span class="text-leaf-800">(শেড: ${esc(l.shade)})</span>` : ''} <span class="text-black/50">× ${bn(l.qty)}</span></span><span class="font-semibold whitespace-nowrap">${tk(l.total)}</span></li>`).join('')}
       </ul>
       <dl class="mt-3 pt-3 border-t border-black/10 text-sm">
         ${line('পণ্যের মূল্য', tk(o.sub))}
@@ -1315,8 +1340,14 @@ document.addEventListener('click', (e) => {
   if (e.target.closest('[data-qvminus]')) { qvQty = Math.max(1, qvQty - 1); return renderQuick(); }
   if (e.target.closest('[data-qvplus]')) { qvQty = Math.min(20, qvQty + 1); return renderQuick(); }
   if (e.target.closest('[data-qvwish]')) { toggleWish(qvId); return renderQuick(); }
-  if (e.target.closest('[data-qvbuy]')) { addToCart(qvId, qvQty); closeQuick(); closeCart(); location.hash = '#checkout'; return; }
-  if (e.target.closest('[data-qvadd]')) { addToCart(qvId, qvQty); closeQuick(); return openCart(); }
+  const shBtn = e.target.closest('[data-qvshade]');
+  if (shBtn) { const sh = (byId(qvId).shades || [])[+shBtn.dataset.qvshade]; qvShade = sh ? sh.name : ''; return renderQuick(); }
+  if (e.target.closest('[data-qvbuy]') || e.target.closest('[data-qvadd]')) {
+    if (hasShades(byId(qvId)) && !qvShade) return toast('আগে একটি শেড বেছে নিন 🎨');
+    addToCart(qvId, qvQty, qvShade);
+    if (e.target.closest('[data-qvbuy]')) { closeQuick(); closeCart(); location.hash = '#checkout'; return; }
+    closeQuick(); return openCart();
+  }
 
   const inc = e.target.closest('[data-inc]');
   if (inc) { cart[inc.dataset.inc]++; return renderCart(); }
@@ -1468,11 +1499,18 @@ $('#notifyForm').addEventListener('submit', (e) => { e.preventDefault(); e.targe
 
 /* ---------- এডমিন প্যানেল (Firebase) সংযোগ ---------- */
 const INIT_FREE = 1000;
-let FEES = { ctg: 60, dhaka: 99, other: 120 };
+let FEES = { ctg: 60, dhaka: 99, other: 120 }, DFEES = {};   // DFEES: এডমিনের দেওয়া জেলাভিত্তিক আলাদা চার্জ
+const DISTRICTS = [["Dhaka", "ঢাকা"], ["Faridpur", "ফরিদপুর"], ["Gazipur", "গাজীপুর"], ["Gopalganj", "গোপালগঞ্জ"], ["Kishoreganj", "কিশোরগঞ্জ"], ["Madaripur", "মাদারীপুর"], ["Manikganj", "মানিকগঞ্জ"], ["Munshiganj", "মুন্সিগঞ্জ"], ["Narayanganj", "নারায়ণগঞ্জ"], ["Narsingdi", "নরসিংদী"], ["Rajbari", "রাজবাড়ী"], ["Shariatpur", "শরীয়তপুর"], ["Tangail", "টাঙ্গাইল"], ["Bandarban", "বান্দরবান"], ["Brahmanbaria", "ব্রাহ্মণবাড়িয়া"], ["Chandpur", "চাঁদপুর"], ["Chattogram", "চট্টগ্রাম"], ["Cumilla", "কুমিল্লা"], ["Coxs Bazar", "কক্সবাজার"], ["Feni", "ফেনী"], ["Khagrachhari", "খাগড়াছড়ি"], ["Lakshmipur", "লক্ষ্মীপুর"], ["Noakhali", "নোয়াখালী"], ["Rangamati", "রাঙ্গামাটি"], ["Bogura", "বগুড়া"], ["Joypurhat", "জয়পুরহাট"], ["Naogaon", "নওগাঁ"], ["Natore", "নাটোর"], ["Chapainawabganj", "চাঁপাইনবাবগঞ্জ"], ["Pabna", "পাবনা"], ["Rajshahi", "রাজশাহী"], ["Sirajganj", "সিরাজগঞ্জ"], ["Bagerhat", "বাগেরহাট"], ["Chuadanga", "চুয়াডাঙ্গা"], ["Jashore", "যশোর"], ["Jhenaidah", "ঝিনাইদহ"], ["Khulna", "খুলনা"], ["Kushtia", "কুষ্টিয়া"], ["Magura", "মাগুরা"], ["Meherpur", "মেহেরপুর"], ["Narail", "নড়াইল"], ["Satkhira", "সাতক্ষীরা"], ["Barguna", "বরগুনা"], ["Barishal", "বরিশাল"], ["Bhola", "ভোলা"], ["Jhalakathi", "ঝালকাঠি"], ["Patuakhali", "পটুয়াখালী"], ["Pirojpur", "পিরোজপুর"], ["Habiganj", "হবিগঞ্জ"], ["Moulvibazar", "মৌলভীবাজার"], ["Sunamganj", "সুনামগঞ্জ"], ["Sylhet", "সিলেট"], ["Dinajpur", "দিনাজপুর"], ["Gaibandha", "গাইবান্ধা"], ["Kurigram", "কুড়িগ্রাম"], ["Lalmonirhat", "লালমনিরহাট"], ["Nilphamari", "নীলফামারী"], ["Panchagarh", "পঞ্চগড়"], ["Rangpur", "রংপুর"], ["Thakurgaon", "ঠাকুরগাঁও"], ["Jamalpur", "জামালপুর"], ["Mymensingh", "ময়মনসিংহ"], ["Netrokona", "নেত্রকোণা"], ["Sherpur", "শেরপুর"]];   // [key, বাংলা নাম] — বাংলাদেশের ৬৪ জেলা
+const districtBn = (k) => (DISTRICTS.find((d) => d[0] === k) || [k, k])[1];
 const SHOP = { whatsapp: '8801560035645', messenger: 'https://www.facebook.com/share/1ceh2uJvxJ/', facebook: '', instagram: '' };
 const waDigits = (p) => { const d = String(p || '').replace(/\D/g, ''); return d.startsWith('880') ? d : '880' + d.replace(/^0/, ''); };
-const areaKey = () => (document.getElementById('coArea') || {}).value || 'other';
-const feeFor = (k) => +(FEES[k] ?? FEES.other) || 0;
+const areaKey = () => (document.getElementById('coArea') || {}).value || '';
+const feeFor = (k) => {
+  if (DFEES[k] !== undefined && DFEES[k] !== '' && !isNaN(+DFEES[k])) return +DFEES[k];
+  if (k === 'Dhaka') return +FEES.dhaka || 0;
+  if (k === 'Chattogram') return +FEES.ctg || 0;
+  return +FEES.other || 0;
+};
 
 function updateFab() {
   const wa = document.getElementById('fabWa');
@@ -1484,8 +1522,9 @@ function updateFab() {
 }
 function updateAreaOptions() {
   const sel = document.getElementById('coArea'); if (!sel) return;
-  const L = { ctg: 'চট্টগ্রাম', dhaka: 'ঢাকা', other: 'ঢাকা ও চট্টগ্রামের বাইরে (সারাদেশ)' };
-  [...sel.options].forEach((o) => { o.textContent = L[o.value] + ' — ডেলিভারি ' + tk(feeFor(o.value)); });
+  const cur = sel.value;
+  sel.innerHTML = '<option value="">— আপনার জেলা বেছে নিন —</option>' + DISTRICTS.map(([k, bnm]) => `<option value="${k}">${bnm} — ডেলিভারি ${tk(feeFor(k))}</option>`).join('');
+  sel.value = cur;
 }
 
 async function lookupPromo(code) {
@@ -1504,9 +1543,9 @@ async function lookupPromo(code) {
 
 async function saveOrder(o, t) {
   const AZ = window.AZ; if (!AZ) throw new Error('not connected');
-  const items = t.lines.map((l) => ({ pid: l.p.fid || ('p' + l.p.id), name: l.p.name, price: l.p.offer, qty: l.qty, image: imgUrl(l.p.id) }));
+  const items = t.lines.map((l) => ({ pid: l.p.fid || ('p' + l.p.id), name: l.p.name, shade: l.shade || '', price: l.p.offer, qty: l.qty, image: imgUrl(l.p.id) }));
   const write = AZ.addDoc(AZ.collection(AZ.db, 'orders'), {
-    orderNo: o.id, name: o.name, phone: o.phone, address: o.address, area: o.area, items,
+    orderNo: o.id, name: o.name, phone: o.phone, address: o.address, area: o.area, areaKey: o.areaKey || '', items,
     subtotal: o.sub, delivery: o.delivery, discount: o.discount, promo: o.promo || '', total: o.total,
     status: 'pending', createdAt: AZ.serverTimestamp()
   });
@@ -1526,7 +1565,8 @@ window.azApplyProducts = (docs, force) => {
                   .sort((a, b) => numId(a.fid) - numId(b.fid));
   const list = act.map((d) => ({
     id: numId(d.fid), fid: d.fid, groups: secOf(d), group: secOf(d).includes('sandalwood') ? 'sandalwood' : secOf(d).includes('bamboo') ? 'bamboo' : 'none', name: d.name,
-    cat: d.cat || 'Others', cats: Array.isArray(d.featCats) ? d.featCats : [d.cat || 'Others'], regular: +d.regular || +d.offer, offer: +d.offer, desc: d.desc || '', brand: canonBrand(d.brand) || detectBrand(d.name), rawBrand: d.brand || ''
+    cat: d.cat || 'Others', cats: Array.isArray(d.featCats) ? d.featCats : [d.cat || 'Others'], regular: +d.regular || +d.offer, offer: +d.offer, desc: d.desc || '', brand: canonBrand(d.brand) || detectBrand(d.name), rawBrand: d.brand || '',
+    shades: Array.isArray(d.shades) ? d.shades.filter((x) => x && x.name).map((x) => ({ name: String(x.name), color: x.color || '' })) : []
   }));
   act.forEach((d) => { IMG[numId(d.fid)] = (d.images && d.images[0]) || NO_IMG; });
   PRODUCTS.splice(0, PRODUCTS.length, ...list);
@@ -1542,6 +1582,7 @@ window.azApplySettings = (st) => {
   applyHero(st.heroImgs);
   CAT_CFG = Array.isArray(st.catCfg) ? st.catCfg : []; applyBrandCfg(st.brands); renderCats(); renderBrands();
   FEES = { ctg: +(st.feeCtg ?? 60), dhaka: +(st.feeDhaka ?? 99), other: +(st.feeOther ?? 120) };
+  DFEES = (st.districtFees && typeof st.districtFees === 'object') ? st.districtFees : {};
   if (+st.freeShipAt > 0) FREE_SHIP_AT = +st.freeShipAt;
   if (st.whatsapp) SHOP.whatsapp = waDigits(st.whatsapp);
   if (st.messenger) SHOP.messenger = st.messenger;
