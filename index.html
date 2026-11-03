@@ -1220,7 +1220,7 @@ $('#coForm').addEventListener('submit', async (e) => {
     cart = {}; promoApplied = ''; promoErr = ''; currentOrderId = null;
     ['coName', 'coAddress', 'coPhone', 'coPromo'].forEach((id) => { document.getElementById(id).value = ''; });
     persist();
-    ordering = false;
+    ordering = false; $('#coConfirm').disabled = false; $('#coSpin').classList.add('hidden');
     renderCart();
     renderSuccess(order, demo);
     window.scrollTo(0, 0);
