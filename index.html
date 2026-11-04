@@ -716,7 +716,7 @@ const DEPTS = [
 
 /* ---------- State ---------- */
 let cart = {}, wish = new Set(), activeCat = 'All', query = '', sortBy = 'default', showWish = false;
-let qvId = null, qvQty = 1, qvShade = '';
+let qvId = null, qvQty = 1, qvShade = '', qvVariant = '';
 let promoApplied = '', promoErr = '', showingSuccess = false, ordering = false, currentOrderId = null, lastOrderText = '';
 try {
   cart = JSON.parse(localStorage.getItem('azn2_cart') || '{}');
@@ -731,8 +731,12 @@ function persist() {
 
 const byId = (id) => PRODUCTS.find((p) => p.id === id);
 // কার্টের কী: শেড থাকলে "আইডি|শেডের নাম", না থাকলে শুধু আইডি
-const ck = (id, shade) => (shade ? id + '|' + shade : String(id));
-const pk = (k) => { k = String(k); const i = k.indexOf('|'); return i < 0 ? { id: +k, shade: '' } : { id: +k.slice(0, i), shade: k.slice(i + 1) }; };
+const ck = (id, shade, variant) => String(id) + (shade ? '|' + shade : '') + (variant ? '|@' + variant : '');
+const pk = (k) => { const parts = String(k).split('|'); let shade = '', variant = ''; parts.slice(1).forEach((x) => { if (x.startsWith('@')) variant = x.slice(1); else shade = shade ? shade + '|' + x : x; }); return { id: +parts[0], shade, variant }; };
+// ভ্যারিয়েন্ট (ml/সাইজ): প্রতিটার আলাদা দাম
+const hasVariants = (p) => !!(p && p.variants && p.variants.length);
+const vOf = (p, name) => (p && p.variants && p.variants.find((v) => v.name === name)) || null;
+const unitOf = (p, name) => { if (!p) return { offer: 0, regular: 0 }; const v = vOf(p, name); return v ? { offer: v.offer, regular: v.regular || v.offer } : { offer: p.offer, regular: p.regular }; };
 const hasShades = (p) => !!(p && p.shades && p.shades.length);
 const pct = (p) => Math.round((1 - p.offer / p.regular) * 100);
 const isBest = (id) => BEST_SELLER_IDS.includes(id);
@@ -807,12 +811,12 @@ function productCard(p) {
         <p class="text-[11px] sm:text-xs text-leaf-700 font-bold uppercase tracking-wide">${p.cat}</p>
         <h3 class="mt-1 text-sm sm:text-[15px] font-semibold leading-snug min-h-[3.4rem] sm:min-h-[3.8rem]">${esc(p.name)}</h3>
         <div class="mt-2 flex flex-wrap items-baseline gap-x-2">
-          <span class="text-lg sm:text-xl font-extrabold">${taka(p.offer)}</span>
+          <span class="text-lg sm:text-xl font-extrabold">${hasVariants(p) ? '<span class="text-xs font-semibold text-black/55">থেকে </span>' : ''}${taka(p.offer)}</span>
           ${d > 0 ? `<span class="text-xs sm:text-sm text-black/40 line-through">${taka(p.regular)}</span>` : ''}
         </div>
         <p class="text-xs text-leaf-800 font-semibold mt-0.5 min-h-[1rem]">${d > 0 ? 'You save ' + taka(p.regular - p.offer) : ''}</p>
-        ${hasShades(p) ? `<p class="text-[11px] text-leaf-800 font-semibold mt-1.5">🎨 ${p.shades.length}টি শেড আছে</p>
-        <button data-view="${p.id}" class="mt-2 w-full py-2.5 rounded-full bg-leaf-500 hover:bg-ink hover:text-white text-ink text-sm font-bold transition flex items-center justify-center gap-2">শেড বেছে নিন</button>`
+        ${(hasShades(p) || hasVariants(p)) ? `<p class="text-[11px] text-leaf-800 font-semibold mt-1.5">${hasVariants(p) ? '📏 ' + p.variants.length + 'টি সাইজ আছে' : '🎨 ' + p.shades.length + 'টি শেড আছে'}</p>
+        <button data-view="${p.id}" class="mt-2 w-full py-2.5 rounded-full bg-leaf-500 hover:bg-ink hover:text-white text-ink text-sm font-bold transition flex items-center justify-center gap-2">${hasVariants(p) ? 'সাইজ বেছে নিন' : 'শেড বেছে নিন'}</button>`
         : `<button data-add="${p.id}" class="mt-3 sm:mt-4 w-full py-2.5 rounded-full bg-leaf-500 hover:bg-ink hover:text-white text-ink text-sm font-bold transition flex items-center justify-center gap-2">
           <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2.4" viewBox="0 0 24 24"><path stroke-linecap="round" d="M12 5v14M5 12h14"/></svg>
           Add to Cart
@@ -870,7 +874,7 @@ function renderProducts() {
 /* ---------- Quick view ---------- */
 function renderQuick() {
   const p = byId(qvId); if (!p) return;
-  const d = pct(p);
+  const sv = hasVariants(p) && qvVariant ? vOf(p, qvVariant) : null, UP = sv ? { offer: sv.offer, regular: sv.regular || sv.offer } : { offer: p.offer, regular: p.regular }, d = Math.round((1 - UP.offer / UP.regular) * 100);
   $('#qvCard').innerHTML = `
     <button data-qvclose class="absolute top-3 right-3 z-10 w-9 h-9 rounded-full bg-white shadow grid place-items-center hover:bg-leaf-100" aria-label="Close">✕</button>
     <div class="grid md:grid-cols-2">
@@ -882,11 +886,13 @@ function renderQuick() {
         <p class="text-xs text-leaf-700 font-bold uppercase tracking-wide">${p.cat}</p>
         <h3 class="font-display text-xl sm:text-2xl font-extrabold mt-1 leading-snug pr-8">${esc(p.name)}</h3>
         <div class="mt-4 flex items-baseline gap-3">
-          <span class="text-3xl font-extrabold">${taka(p.offer)}</span>
-          ${d > 0 ? `<span class="text-base text-black/40 line-through">${taka(p.regular)}</span>` : ''}
+          <span class="text-3xl font-extrabold">${hasVariants(p) && !sv ? '<span class="text-base font-semibold text-black/55">থেকে </span>' : ''}${taka(UP.offer)}</span>
+          ${d > 0 ? `<span class="text-base text-black/40 line-through">${taka(UP.regular)}</span>` : ''}
         </div>
-        ${d > 0 ? `<p class="text-sm text-leaf-800 font-semibold mt-1">You save ${taka(p.regular - p.offer)} (${d}%)</p>` : ''}
+        ${d > 0 ? `<p class="text-sm text-leaf-800 font-semibold mt-1">You save ${taka(UP.regular - UP.offer)} (${d}%)</p>` : ''}
         <p class="text-sm text-black/65 mt-4 leading-relaxed">${esc(p.desc)}</p>
+        ${hasVariants(p) ? `<div class="mt-4"><p class="text-sm font-bold">সাইজ / ml বেছে নিন <span class="text-red-600">*</span>${qvVariant ? `<span class="font-medium text-leaf-800"> — ${esc(qvVariant)}</span>` : ''}</p>
+          <div class="mt-2 flex flex-wrap gap-2">${p.variants.map((v, i) => `<button type="button" data-qvvariant="${i}" aria-pressed="${qvVariant === v.name}" class="px-3.5 py-2 rounded-xl border text-sm font-semibold transition text-left ${qvVariant === v.name ? 'bg-ink text-white border-ink' : 'bg-white border-black/20 hover:border-ink'}">${esc(v.name)}<span class="block text-xs font-bold ${qvVariant === v.name ? 'text-white/80' : 'text-leaf-800'}">${taka(v.offer)}${(v.regular || v.offer) > v.offer ? ` <s class="font-normal opacity-60">${taka(v.regular)}</s>` : ''}</span></button>`).join('')}</div></div>` : ''}
         ${hasShades(p) ? `<div class="mt-4"><p class="text-sm font-bold">শেড বেছে নিন <span class="text-red-600">*</span>${qvShade ? `<span class="font-medium text-leaf-800"> — ${esc(qvShade)}</span>` : ''}</p>
           <div class="mt-2 flex flex-wrap gap-2">${p.shades.map((sh, i) => `<button type="button" data-qvshade="${i}" aria-pressed="${qvShade === sh.name}" class="inline-flex items-center gap-2 px-3 py-2 rounded-full border text-sm font-semibold transition ${qvShade === sh.name ? 'bg-ink text-white border-ink' : 'bg-white border-black/20 hover:border-ink'}">${sh.color ? `<span class="w-4 h-4 rounded-full border border-black/20 shrink-0" style="background:${esc(sh.color)}"></span>` : ''}${esc(sh.name)}</button>`).join('')}</div></div>` : ''}
         <ul class="mt-4 text-sm text-black/65 space-y-1.5">
@@ -902,14 +908,14 @@ function renderQuick() {
           <button data-qvwish class="w-11 h-11 rounded-full border border-black/15 grid place-items-center hover:border-ink" aria-label="Toggle wishlist">${heartSvg(wish.has(p.id), 'w-5 h-5')}</button>
         </div>
         <div class="mt-4 grid grid-cols-2 gap-3">
-          <button data-qvadd class="py-3.5 rounded-full bg-leaf-500 hover:bg-ink hover:text-white text-ink font-bold transition text-sm sm:text-base">Add to Cart · ${taka(p.offer * qvQty)}</button>
+          <button data-qvadd class="py-3.5 rounded-full bg-leaf-500 hover:bg-ink hover:text-white text-ink font-bold transition text-sm sm:text-base">Add to Cart · ${taka(UP.offer * qvQty)}</button>
           <button data-qvbuy class="py-3.5 rounded-full bg-ink hover:bg-leaf-500 text-white hover:text-ink font-bold transition text-sm sm:text-base">Buy Now</button>
         </div>
       </div>
     </div>`;
 }
 function openQuick(id) {
-  qvId = id; qvQty = 1; qvShade = ''; renderQuick();
+  qvId = id; qvQty = 1; qvShade = ''; qvVariant = ''; renderQuick();
   $('#qvOverlay').classList.remove('hidden');
   document.body.style.overflow = 'hidden';
 }
@@ -923,7 +929,8 @@ function totals() {
   let count = 0, sub = 0, reg = 0;
   for (const [key, qty] of Object.entries(cart)) {
     const p = byId(pk(key).id); if (!p) continue;
-    count += qty; sub += p.offer * qty; reg += p.regular * qty;
+    const U = unitOf(p, pk(key).variant);
+    count += qty; sub += U.offer * qty; reg += U.regular * qty;
   }
   return { count, sub, saved: reg - sub };
 }
@@ -944,13 +951,14 @@ function renderCart() {
 
   const entries = Object.entries(cart).filter(([key]) => byId(pk(key).id));
   $('#cartItems').innerHTML = entries.length ? entries.map(([key, qty]) => {
-    const { id: pid, shade } = pk(key), p = byId(pid);
+    const { id: pid, shade, variant } = pk(key), p = byId(pid), U = unitOf(p, variant);
     return `<div class="flex gap-3 items-center">
       <img src="${IMG[p.id]}" alt="${esc(p.name)}" class="w-16 h-20 shrink-0 rounded-xl object-cover bg-leaf-50">
       <div class="flex-1 min-w-0">
         <p class="text-sm font-semibold leading-snug">${esc(p.name)}</p>
+        ${variant ? `<p class="text-xs font-semibold text-leaf-800 mt-0.5">📏 সাইজ: ${esc(variant)}</p>` : ''}
         ${shade ? `<p class="text-xs font-semibold text-leaf-800 mt-0.5">🎨 শেড: ${esc(shade)}</p>` : ''}
-        <p class="text-sm mt-0.5"><span class="text-leaf-800 font-bold">${taka(p.offer)}</span> ${pct(p) > 0 ? `<span class="text-xs text-black/40 line-through">${taka(p.regular)}</span>` : ''}</p>
+        <p class="text-sm mt-0.5"><span class="text-leaf-800 font-bold">${taka(U.offer)}</span> ${U.regular > U.offer ? `<span class="text-xs text-black/40 line-through">${taka(U.regular)}</span>` : ''}</p>
         <div class="mt-1.5 inline-flex items-center border border-black/15 rounded-full text-sm bg-white">
           <button data-dec="${esc(key)}" class="w-8 h-8 grid place-items-center hover:text-leaf-700" aria-label="Decrease">−</button>
           <span class="w-6 text-center font-medium">${qty}</span>
@@ -973,8 +981,9 @@ function toast(msg) {
   clearTimeout(toast._t);
   toast._t = setTimeout(() => t.classList.add('opacity-0', 'translate-y-4'), 2400);
 }
-function addToCart(id, qty = 1, shade = '') {
-  const k = ck(id, shade);
+function addToCart(id, qty = 1, shade = '', variant = '') {
+  if (hasVariants(byId(id)) && !variant) return openQuick(id);
+  const k = ck(id, shade, variant);
   cart[k] = (cart[k] || 0) + qty;
   renderCart(); bump($('#cartCount'));
   toast('Added to cart ✓');
@@ -1016,8 +1025,8 @@ window.addEventListener('hashchange', route);
    চেকআউট
    ===================================================================== */
 function checkoutTotals() {
-  const lines = Object.entries(cart).map(([key, qty]) => { const k = pk(key); return { key, p: byId(k.id), shade: k.shade, qty }; }).filter((l) => l.p);
-  const sub = lines.reduce((s, l) => s + l.p.offer * l.qty, 0);
+  const lines = Object.entries(cart).map(([key, qty]) => { const k = pk(key), p = byId(k.id); return { key, p, shade: k.shade, variant: k.variant, unit: unitOf(p, k.variant), qty }; }).filter((l) => l.p);
+  const sub = lines.reduce((s, l) => s + l.unit.offer * l.qty, 0);
   const count = lines.reduce((s, l) => s + l.qty, 0);
   const promo = promoApplied ? PROMO_CODES[promoApplied] : null;
   let discount = 0;
@@ -1037,13 +1046,14 @@ function renderCheckout() {
   if (!showForm) return;
 
   // পণ্যের তালিকা
-  $('#coItems').innerHTML = t.lines.map(({ p, qty, key, shade }) => `
+  $('#coItems').innerHTML = t.lines.map(({ p, qty, key, shade, variant, unit }) => `
     <li class="flex gap-3 py-4">
       <img src="${IMG[p.id]}" alt="${esc(p.name)}" class="w-16 h-20 shrink-0 rounded-xl object-cover bg-leaf-50">
       <div class="flex-1 min-w-0">
         <p class="text-sm font-semibold leading-snug">${esc(p.name)}</p>
+        ${variant ? `<p class="text-xs font-semibold text-leaf-800 mt-0.5">📏 সাইজ: ${esc(variant)}</p>` : ''}
         ${shade ? `<p class="text-xs font-semibold text-leaf-800 mt-0.5">🎨 শেড: ${esc(shade)}</p>` : ''}
-        <p class="text-xs text-black/55 mt-1">প্রতিটি ${tk(p.offer)}${pct(p) > 0 ? ` <s class="text-black/35">${tk(p.regular)}</s>` : ''}</p>
+        <p class="text-xs text-black/55 mt-1">প্রতিটি ${tk(unit.offer)}${unit.regular > unit.offer ? ` <s class="text-black/35">${tk(unit.regular)}</s>` : ''}</p>
         <div class="mt-2 flex items-center gap-3">
           <div class="inline-flex items-center border border-black/15 rounded-full text-sm bg-white" role="group" aria-label="পরিমাণ">
             <button type="button" data-dec="${esc(key)}" class="w-8 h-8 grid place-items-center hover:text-leaf-700" aria-label="কমান">−</button>
@@ -1053,7 +1063,7 @@ function renderCheckout() {
           <button type="button" data-rm="${esc(key)}" class="text-xs text-red-600 underline">সরান</button>
         </div>
       </div>
-      <p class="font-extrabold text-sm whitespace-nowrap">${tk(p.offer * qty)}</p>
+      <p class="font-extrabold text-sm whitespace-nowrap">${tk(unit.offer * qty)}</p>
     </li>`).join('');
 
   // বিল
@@ -1156,7 +1166,7 @@ function buildOrder(info, t) {
   return {
     id: currentOrderId || (currentOrderId = genOrderId()),
     ...info,
-    lines: t.lines.map((l) => ({ name: l.p.name, shade: l.shade || '', qty: l.qty, unit: l.p.offer, total: l.p.offer * l.qty, img: imgUrl(l.p.id), src: imgSrc(l.p.id) })),
+    lines: t.lines.map((l) => ({ name: l.p.name, shade: l.shade || '', variant: l.variant || '', qty: l.qty, unit: l.unit.offer, total: l.unit.offer * l.qty, img: imgUrl(l.p.id), src: imgSrc(l.p.id) })),
     area: districtBn(areaKey()), areaKey: areaKey(), sub: t.sub, discount: t.discount, promo: promoApplied, delivery: t.delivery, total: t.total, time: orderTime()
   };
 }
@@ -1166,7 +1176,7 @@ function buildOrderText(o, lim) {
     `👤 নাম: ${o.name}`, `📞 মোবাইল: ${o.phone}`, `🏙️ জেলা: ${o.area}`, `📍 ঠিকানা: ${o.address}`, '',
     '📦 অর্ডারের পণ্য:'
   ];
-  o.lines.forEach((l, i) => { const nm = lim && l.name.length > lim ? l.name.slice(0, lim - 1) + '…' : l.name; L.push(`${i + 1}) ${nm}${l.shade ? ` [শেড: ${l.shade}]` : ''} — ${l.qty} পিস × ${l.unit}৳ = ${l.total}৳`); });
+  o.lines.forEach((l, i) => { const nm = lim && l.name.length > lim ? l.name.slice(0, lim - 1) + '…' : l.name; L.push(`${i + 1}) ${nm}${l.variant ? ` [সাইজ: ${l.variant}]` : ''}${l.shade ? ` [শেড: ${l.shade}]` : ''} — ${l.qty} পিস × ${l.unit}৳ = ${l.total}৳`); });
   L.push('', `পণ্যের মূল্য: ${o.sub}৳`);
   if (o.discount > 0) L.push(`প্রমো ছাড় (${o.promo}): -${o.discount}৳`);
   L.push(`ডেলিভারি চার্জ: ${o.delivery === 0 ? 'ফ্রি' : o.delivery + '৳'}`, `💰 সর্বমোট বিল: ${o.total}৳`, '💵 পেমেন্ট: ক্যাশ অন ডেলিভারি', `🕒 ${o.time}`);
@@ -1337,7 +1347,7 @@ function renderSuccess(o, demo) {
     <section class="mt-5 bg-white rounded-2xl border border-black/10 p-5 sm:p-6">
       <h2 class="text-lg font-extrabold">আপনার অর্ডার</h2>
       <ul class="mt-2 divide-y divide-black/10 text-sm">
-        ${o.lines.map((l) => `<li class="flex justify-between gap-4 py-2.5"><span>${esc(l.name)}${l.shade ? ` <span class="text-leaf-800">(শেড: ${esc(l.shade)})</span>` : ''} <span class="text-black/50">× ${bn(l.qty)}</span></span><span class="font-semibold whitespace-nowrap">${tk(l.total)}</span></li>`).join('')}
+        ${o.lines.map((l) => `<li class="flex justify-between gap-4 py-2.5"><span>${esc(l.name)}${l.variant ? ` <span class="text-leaf-800">(সাইজ: ${esc(l.variant)})</span>` : ''}${l.shade ? ` <span class="text-leaf-800">(শেড: ${esc(l.shade)})</span>` : ''} <span class="text-black/50">× ${bn(l.qty)}</span></span><span class="font-semibold whitespace-nowrap">${tk(l.total)}</span></li>`).join('')}
       </ul>
       <dl class="mt-3 pt-3 border-t border-black/10 text-sm">
         ${line('পণ্যের মূল্য', tk(o.sub))}
@@ -1391,9 +1401,12 @@ document.addEventListener('click', (e) => {
   if (e.target.closest('[data-qvwish]')) { toggleWish(qvId); return renderQuick(); }
   const shBtn = e.target.closest('[data-qvshade]');
   if (shBtn) { const sh = (byId(qvId).shades || [])[+shBtn.dataset.qvshade]; qvShade = sh ? sh.name : ''; return renderQuick(); }
+  const vaBtn = e.target.closest('[data-qvvariant]');
+  if (vaBtn) { const vv = (byId(qvId).variants || [])[+vaBtn.dataset.qvvariant]; qvVariant = vv ? vv.name : ''; return renderQuick(); }
   if (e.target.closest('[data-qvbuy]') || e.target.closest('[data-qvadd]')) {
+    if (hasVariants(byId(qvId)) && !qvVariant) return toast('আগে সাইজ / ml বেছে নিন 📏');
     if (hasShades(byId(qvId)) && !qvShade) return toast('আগে একটি শেড বেছে নিন 🎨');
-    addToCart(qvId, qvQty, qvShade);
+    addToCart(qvId, qvQty, qvShade, qvVariant);
     if (e.target.closest('[data-qvbuy]')) { closeQuick(); closeCart(); location.hash = '#checkout'; return; }
     closeQuick(); return openCart();
   }
@@ -1592,7 +1605,7 @@ async function lookupPromo(code) {
 
 async function saveOrder(o, t) {
   const AZ = window.AZ; if (!AZ) throw new Error('not connected');
-  const items = t.lines.map((l) => ({ pid: l.p.fid || ('p' + l.p.id), name: l.p.name, shade: l.shade || '', price: l.p.offer, qty: l.qty, image: imgUrl(l.p.id) }));
+  const items = t.lines.map((l) => ({ pid: l.p.fid || ('p' + l.p.id), name: l.p.name, shade: l.shade || '', variant: l.variant || '', price: l.unit.offer, qty: l.qty, image: imgUrl(l.p.id) }));
   const write = AZ.addDoc(AZ.collection(AZ.db, 'orders'), {
     orderNo: o.id, name: o.name, phone: o.phone, address: o.address, area: o.area, areaKey: o.areaKey || '', items,
     subtotal: o.sub, delivery: o.delivery, discount: o.discount, promo: o.promo || '', total: o.total,
@@ -1615,8 +1628,10 @@ window.azApplyProducts = (docs, force) => {
   const list = act.map((d) => ({
     id: numId(d.fid), fid: d.fid, groups: secOf(d), group: secOf(d).includes('sandalwood') ? 'sandalwood' : secOf(d).includes('bamboo') ? 'bamboo' : 'none', name: d.name,
     cat: d.cat || 'Others', cats: Array.isArray(d.featCats) ? d.featCats : [d.cat || 'Others'], regular: +d.regular || +d.offer, offer: +d.offer, desc: d.desc || '', brand: canonBrand(d.brand) || detectBrand(d.name), rawBrand: d.brand || '',
-    shades: Array.isArray(d.shades) ? d.shades.filter((x) => x && x.name).map((x) => ({ name: String(x.name), color: x.color || '' })) : []
+    shades: Array.isArray(d.shades) ? d.shades.filter((x) => x && x.name).map((x) => ({ name: String(x.name), color: x.color || '' })) : [],
+    variants: Array.isArray(d.variants) ? d.variants.filter((x) => x && x.name && +x.offer > 0).map((x) => ({ name: String(x.name), offer: +x.offer, regular: Math.max(+x.regular || +x.offer, +x.offer) })) : []
   }));
+  list.forEach((p) => { if (p.variants.length) { const m = p.variants.reduce((a, b) => (b.offer < a.offer ? b : a)); p.offer = m.offer; p.regular = m.regular; } });
   act.forEach((d) => { IMG[numId(d.fid)] = (d.images && d.images[0]) || NO_IMG; });
   PRODUCTS.splice(0, PRODUCTS.length, ...list);
   BEST_SELLER_IDS = act.filter((d) => secOf(d).includes('best')).map((d) => numId(d.fid));

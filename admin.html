@@ -349,6 +349,7 @@ function productForm(p) {
     <label class="text-sm font-semibold">স্টক<input id="fStock" type="number" class="inp mt-1 font-normal" value="${p?.stock ?? 50}"></label>
     <div class="text-sm pt-6"><label class="block"><input id="fActive" type="checkbox" ${p?.active === false ? '' : 'checked'}> সাইটে দেখান</label></div>
     <label class="col-span-2 text-sm font-semibold">🎨 শেড (মেকআপ আইটেমের জন্য, ঐচ্ছিক) <span class="text-xs font-normal text-black/50">প্রতি লাইনে একটি শেড। রঙের কোড দিলে কাস্টমার রঙের গোল দাগ দেখবে। যেমন: <code>01 Ivory | #F3D9C4</code> — কোড না দিলেও চলবে</span><textarea id="fShades" rows="4" class="inp mt-1 font-normal" placeholder="01 Ivory | #F3D9C4&#10;02 Beige | #E3B98F&#10;03 Rose">${esc((p?.shades || []).map(x => x.name + (x.color ? ' | ' + x.color : '')).join('\n'))}</textarea></label>
+    <label class="col-span-2 text-sm font-semibold">📏 ভ্যারিয়েন্ট (ml / সাইজ, আলাদা দামসহ) <span class="text-xs font-normal text-black/50">প্রতি লাইনে একটা: <code>নাম | দাম | আগের দাম (ঐচ্ছিক)</code> — যেমন <code>100 ml | 450 | 550</code>। এখানে দিলে ওপরের দাম ঘরের বদলে এগুলোর কমটা "থেকে" দাম দেখাবে।</span><textarea id="fVariants" rows="4" class="inp mt-1 font-normal" placeholder="100 ml | 450 | 550&#10;150 ml | 650 | 750&#10;300 ml | 1100">${esc((p?.variants || []).map(v => v.name + ' | ' + v.offer + (v.regular && v.regular != v.offer ? ' | ' + v.regular : '')).join('\n'))}</textarea></label>
     <label class="col-span-2 text-sm font-semibold">বিবরণ<textarea id="fDesc" rows="3" class="inp mt-1 font-normal">${esc(p?.desc)}</textarea></label>
     <div class="col-span-2"><p class="text-sm font-semibold mb-1">ছবি (প্রথমটি মূল ছবি, সর্বোচ্চ ৫টি)</p><div id="fImgs" class="flex gap-2 flex-wrap"></div><input type="file" accept="image/*" multiple data-in="pimgs" class="mt-2 text-sm"></div></div>
     <div class="flex gap-2 mt-4"><button class="btn flex-1" data-act="psave">সেভ করুন</button><button class="btn2" data-act="close">বাতিল</button></div>`);
@@ -369,7 +370,7 @@ function promoForm(p) {
 function orderModal(o) {
   openModal(`<div class="flex justify-between items-start"><div><h2 class="font-bold text-lg">${esc(o.orderNo)}</h2><p class="text-xs text-black/60">${dt(o.createdAt)}</p></div>${badge(o.status)}</div>
   <div class="mt-3 text-sm space-y-1"><p>👤 <b>${esc(o.name)}</b> · 📞 ${esc(o.phone)}</p><p>📍 ${esc(o.address)}${o.area ? ` <span class="text-black/50">(${esc(o.area)})</span>` : ''}</p>${o.note ? `<p>📝 ${esc(o.note)}</p>` : ''}</div>
-  <div class="mt-3 border rounded-xl divide-y text-sm">${(o.items || []).map(i => `<div class="p-2 flex gap-2 items-center">${(() => { const im = i.image || D.products.find(p => p.id === i.pid)?.images?.[0] || ''; return im ? `<img src="${esc(im)}" class="w-10 h-12 object-cover rounded">` : ''; })()}<span class="flex-1">${esc(i.name)}${i.shade ? ` <b class="text-pink-700">🎨 ${esc(i.shade)}</b>` : ''}<br><span class="text-black/60">${tk(i.price)} × ${bn(i.qty)}</span></span><b>${tk(i.price * i.qty)}</b></div>`).join('')}
+  <div class="mt-3 border rounded-xl divide-y text-sm">${(o.items || []).map(i => `<div class="p-2 flex gap-2 items-center">${(() => { const im = i.image || D.products.find(p => p.id === i.pid)?.images?.[0] || ''; return im ? `<img src="${esc(im)}" class="w-10 h-12 object-cover rounded">` : ''; })()}<span class="flex-1">${esc(i.name)}${i.variant ? ` <b class="text-blue-700">📏 ${esc(i.variant)}</b>` : ''}${i.shade ? ` <b class="text-pink-700">🎨 ${esc(i.shade)}</b>` : ''}<br><span class="text-black/60">${tk(i.price)} × ${bn(i.qty)}</span></span><b>${tk(i.price * i.qty)}</b></div>`).join('')}
     <div class="p-2 flex justify-between"><span>সাবটোটাল</span><span>${tk(o.subtotal)}</span></div><div class="p-2 flex justify-between"><span>ডেলিভারি</span><span>${tk(o.delivery)}</span></div>
     ${o.discount ? `<div class="p-2 flex justify-between"><span>ছাড় ${o.promo ? '(' + esc(o.promo) + ')' : ''}</span><span>-${tk(o.discount)}</span></div>` : ''}<div class="p-2 flex justify-between font-bold"><span>মোট</span><span>${tk(o.total)}</span></div></div>
   <label class="block mt-3 text-sm font-semibold">স্ট্যাটাস<select id="oStatus" class="inp mt-1 font-normal">${Object.entries(ST).map(([k, v]) => `<option value="${k}" ${o.status === k ? 'selected' : ''}>${v[0]}</option>`).join('')}</select></label>
@@ -381,7 +382,7 @@ function invoice(o) {
   w.document.write(`<html><head><meta charset="utf-8"><title>${esc(o.orderNo)}</title><style>body{font-family:'Noto Sans Bengali',sans-serif;max-width:700px;margin:20px auto;padding:10px;color:#111}table{width:100%;border-collapse:collapse;margin-top:12px}td,th{border-bottom:1px solid #ddd;padding:8px;text-align:left}.r{text-align:right}</style></head><body>
   <h2>Azaan — ইনভয়েস</h2><p>অর্ডার: <b>${esc(o.orderNo)}</b><br>তারিখ: ${dt(o.createdAt)}<br>${s.phone ? 'ফোন: ' + esc(s.phone) : ''}</p><hr>
   <p><b>${esc(o.name)}</b><br>${esc(o.phone)}<br>${esc(o.address)}</p>
-  <table><tr><th>পণ্য</th><th class="r">দাম</th><th class="r">পরিমাণ</th><th class="r">মোট</th></tr>${(o.items || []).map(i => `<tr><td>${esc(i.name)}${i.shade ? ' — শেড: ' + esc(i.shade) : ''}</td><td class="r">${tk(i.price)}</td><td class="r">${bn(i.qty)}</td><td class="r">${tk(i.price * i.qty)}</td></tr>`).join('')}
+  <table><tr><th>পণ্য</th><th class="r">দাম</th><th class="r">পরিমাণ</th><th class="r">মোট</th></tr>${(o.items || []).map(i => `<tr><td>${esc(i.name)}${i.variant ? ' — সাইজ: ' + esc(i.variant) : ''}${i.shade ? ' — শেড: ' + esc(i.shade) : ''}</td><td class="r">${tk(i.price)}</td><td class="r">${bn(i.qty)}</td><td class="r">${tk(i.price * i.qty)}</td></tr>`).join('')}
   <tr><td colspan="3" class="r">সাবটোটাল</td><td class="r">${tk(o.subtotal)}</td></tr><tr><td colspan="3" class="r">ডেলিভারি</td><td class="r">${tk(o.delivery)}</td></tr>${o.discount ? `<tr><td colspan="3" class="r">ছাড়</td><td class="r">-${tk(o.discount)}</td></tr>` : ''}<tr><td colspan="3" class="r"><b>সর্বমোট (ক্যাশ অন ডেলিভারি)</b></td><td class="r"><b>${tk(o.total)}</b></td></tr></table>
   <p style="margin-top:30px">ধন্যবাদ আপনার অর্ডারের জন্য!</p><script>onload=()=>print()<\/script></body></html>`); w.document.close();
 }
@@ -453,11 +454,13 @@ const impData = it => {
     const offer = +p.offer || 0, cat = it.cats.size ? [...it.cats][0] : String(p.cat ?? p.category ?? '').trim();
     Object.assign(d, { name: it.name, cat, brand: canonBrand(p.brand) || detectBrand(it.name), regular: +p.regular || offer, offer, stock: has('stock') ? +p.stock || 0 : 50, desc: String(p.desc ?? p.description ?? '').trim(), active: p.active !== false, images: imgs });
     d.featCats = cats.length ? cats : (cat ? [cat] : []);
+    if (Array.isArray(p.variants)) { d.variants = cleanVariants(p.variants); if (d.variants.length) { const m = d.variants.reduce((a, b) => b.offer < a.offer ? b : a); d.offer = m.offer; d.regular = m.regular; } }
     Object.assign(d, secFields(Array.isArray(p.sections) ? p.sections : p.bestSeller ? ['best'] : (p.group === 'sandalwood' || p.group === 'bamboo') ? [p.group] : []));
     return d;
   }
   if (it.name && it.name !== ex.name && has('name')) d.name = it.name;
   if (has('brand')) d.brand = canonBrand(p.brand);
+  if (Array.isArray(p.variants)) { d.variants = cleanVariants(p.variants); if (d.variants.length) { const m = d.variants.reduce((a, b) => b.offer < a.offer ? b : a); d.offer = m.offer; d.regular = m.regular; } }
   if (has('offer')) d.offer = +p.offer || 0;
   if (has('regular')) d.regular = +p.regular || 0;
   if (has('stock')) d.stock = +p.stock || 0;
@@ -518,6 +521,7 @@ const CHUNK_BYTES = 700000;
 const setSync = m => { syncMsg = m; const el = $('#syncStat'); if (el) el.textContent = m; };
 const sha = async t => { try { const b = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(t)); return [...new Uint8Array(b)].map(x => x.toString(16).padStart(2, '0')).join('').slice(0, 24); } catch { let h = 5381; for (let i = 0; i < t.length; i++) h = ((h << 5) + h + t.charCodeAt(i)) | 0; return 'd' + (h >>> 0).toString(16) + t.length; } };
 const isData = x => String(x).startsWith('data:');
+const cleanVariants = a => (Array.isArray(a) ? a : []).map(v => { const offer = +String(v?.offer ?? '').replace(/[^0-9.]/g, '') || 0, regular = +String(v?.regular ?? '').replace(/[^0-9.]/g, '') || offer; return { name: String(v?.name ?? '').trim(), offer, regular: Math.max(regular, offer) }; }).filter(v => v.name && v.offer > 0).slice(0, 30);
 function buildCatalog() {
   return D.products.filter(p => p.active !== false && p.name && +p.offer > 0 && (+p.stock || 0) > 0)
     .sort((a, b) => a.id < b.id ? -1 : a.id > b.id ? 1 : 0)
@@ -525,6 +529,7 @@ function buildCatalog() {
       const it = { fid: p.id, name: p.name, cat: p.cat || '', regular: +p.regular || +p.offer, offer: +p.offer, stock: 1, desc: p.desc || '', brand: p.brand || '', images: (p.images || []).filter(Boolean), sections: secOf(p) };
       if (Array.isArray(p.featCats)) it.featCats = p.featCats;
       if (Array.isArray(p.shades) && p.shades.length) it.shades = p.shades;
+      if (Array.isArray(p.variants) && p.variants.length) it.variants = p.variants;
       return it;
     });
 }
@@ -669,7 +674,9 @@ const A = {
     const fcats = [...document.querySelectorAll('[data-catchk]:checked')].map(x => x.dataset.catchk), newCat = $('#fCat').value.trim();
     if (!form.id && newCat && !fcats.includes(newCat)) fcats.push(newCat);
     const d = { name: $('#fName').value.trim(), brand: canonBrand($('#fBrand').value) || detectBrand($('#fName').value), cat: $('#fCat').value.trim(), ...secFields(secs), featCats: fcats, regular: +$('#fReg').value, offer: +$('#fOff').value, stock: +$('#fStock').value || 0, desc: $('#fDesc').value.trim(), active: $('#fActive').checked, images: form.images,
-      shades: $('#fShades').value.split('\n').map(l => l.trim()).filter(Boolean).map(l => { const [n, c] = l.split('|').map(x => x.trim()); return { name: n, color: /^#[0-9a-f]{3,8}$/i.test(c || '') ? c : '' }; }).filter(x => x.name).slice(0, 40) };
+      shades: $('#fShades').value.split('\n').map(l => l.trim()).filter(Boolean).map(l => { const [n, c] = l.split('|').map(x => x.trim()); return { name: n, color: /^#[0-9a-f]{3,8}$/i.test(c || '') ? c : '' }; }).filter(x => x.name).slice(0, 40),
+      variants: cleanVariants($('#fVariants').value.split('\n').map(l => { const [n, o, r] = l.split('|').map(x => x.trim()); return { name: n, offer: o, regular: r }; })) };
+    if (d.variants.length) { const m = d.variants.reduce((a, b) => b.offer < a.offer ? b : a); d.offer = m.offer; d.regular = m.regular; }
     if (!d.name || !d.offer) return toast('নাম ও অফার দাম দিন');
     if (!d.regular) d.regular = d.offer;
     if (d.images.join('').length > 950000) return toast('ছবির সাইজ বেশি, কয়েকটি ছবি বাদ দিন');
