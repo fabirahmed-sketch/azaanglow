@@ -1182,29 +1182,70 @@ function fitCaption(o) {
   for (const lim of [0, 45, 32, 24, 16]) { const t = buildOrderText(o, lim); if (t.length <= 1000) return t; }
   return buildOrderText(o, 16).slice(0, 990) + '…\n(বাকি তথ্য এডমিন প্যানেলে)';
 }
+// ছবিকে JPEG ফাইলে বদলায় (WEBP/বড় ছবি টেলিগ্রাম মাঝে মাঝে নেয় না); না পারলে null
+function toJpegBlob(src) {
+  return new Promise((res) => {
+    const im = new Image(); im.crossOrigin = 'anonymous';
+    im.onload = () => {
+      try {
+        const k = Math.min(1, 1280 / Math.max(im.naturalWidth, im.naturalHeight)), c = document.createElement('canvas');
+        c.width = Math.max(1, Math.round(im.naturalWidth * k)); c.height = Math.max(1, Math.round(im.naturalHeight * k));
+        const g = c.getContext('2d'); g.fillStyle = '#fff'; g.fillRect(0, 0, c.width, c.height); g.drawImage(im, 0, 0, c.width, c.height);
+        c.toBlob((b) => res(b), 'image/jpeg', 0.85);
+      } catch (e) { res(null); }
+    };
+    im.onerror = () => res(null);
+    setTimeout(() => res(null), 12000);
+    im.src = src;
+  });
+}
+async function tgPost(method, fd) {
+  const r = await fetch(`https://api.telegram.org/bot${TELEGRAM.botToken}/${method}`, { method: 'POST', body: fd });
+  const d = await r.json().catch(() => ({}));
+  if (!d.ok) throw new Error(d.description || method + ' failed');
+}
+// ছবিকে টেলিগ্রামের উপযোগী JPEG ফাইলে বদলায় (বড়/অচেনা ফরম্যাট হলেও যেন যায়); না পারলে মূল ফাইল বা লিংক
+async function tgPrepPhoto(src) {
+  let blob = null;
+  try { blob = await (await fetch(src)).blob(); } catch (e) { return src.startsWith('data:') ? null : src; }   // লিংক হলে টেলিগ্রাম নিজে নামাবে
+  try {
+    const url = URL.createObjectURL(blob);
+    const img = await new Promise((res, rej) => { const im = new Image(); im.onload = () => res(im); im.onerror = rej; im.src = url; });
+    const k = Math.min(1, 1280 / Math.max(img.naturalWidth, img.naturalHeight)), c = document.createElement('canvas');
+    c.width = Math.max(1, Math.round(img.naturalWidth * k)); c.height = Math.max(1, Math.round(img.naturalHeight * k));
+    const g = c.getContext('2d'); g.fillStyle = '#fff'; g.fillRect(0, 0, c.width, c.height); g.drawImage(img, 0, 0, c.width, c.height);
+    URL.revokeObjectURL(url);
+    const out = await new Promise((res) => c.toBlob(res, 'image/jpeg', 0.88));
+    if (out && out.size) return out;
+  } catch (e) { /* মূল ফাইলই পাঠানো হবে */ }
+  return blob;
+}
 // অর্ডারের লেখা + ছবি = একটাই বার্তা (ছবির অ্যালবামের ক্যাপশনে অর্ডারের বিবরণ)
 async function sendOrderToTelegram(order, text) {
   if (!telegramReady()) throw new Error('telegram not configured');
   const photos = order.lines.filter((l) => l.src).slice(0, 10);
-  if (!photos.length) return sendToTelegram(text);
+  if (!photos.length) return sendToTelegram(text + '\n\n(ছবি নেই: পণ্যে ছবি পাওয়া যায়নি)');
+  let why = '';
   try {
     const base = `https://api.telegram.org/bot${TELEGRAM.botToken}/`, caption = fitCaption(order), fd = new FormData();
     fd.append('chat_id', TELEGRAM.chatId);
     const refs = [];
     for (let i = 0; i < photos.length; i++) {
-      const src = photos[i].src;
-      if (src.startsWith('data:')) { fd.append('f' + i, await (await fetch(src)).blob(), 'p' + i + '.jpg'); refs.push('attach://f' + i); }
-      else refs.push(src);
+      const p = await tgPrepPhoto(photos[i].src);
+      if (!p) continue;
+      if (typeof p === 'string') refs.push(p);
+      else { fd.append('f' + i, p, 'p' + i + '.jpg'); refs.push('attach://f' + i); }
     }
+    if (!refs.length) throw new Error('no usable photo');
     let r;
     if (refs.length === 1) { fd.append('photo', refs[0]); fd.append('caption', caption); r = await fetch(base + 'sendPhoto', { method: 'POST', body: fd }); }
     else { fd.append('media', JSON.stringify(refs.map((m, i) => i === 0 ? { type: 'photo', media: m, caption } : { type: 'photo', media: m }))); r = await fetch(base + 'sendMediaGroup', { method: 'POST', body: fd }); }
     const d = await r.json().catch(() => ({}));
-    if (!d.ok) throw new Error(d.description || 'photo failed');
-  } catch (e) {
-    console.warn('Telegram photo message failed, sending text only:', e);
-    await sendToTelegram(text);       // ছবি না গেলেও অর্ডার যেন অবশ্যই পৌঁছায়
-  }
+    if (d.ok) return;
+    why = d.description || ('HTTP ' + r.status);
+  } catch (e) { why = (e && e.message) || String(e); }
+  console.warn('Telegram photo message failed:', why);
+  await sendToTelegram(text + '\n\n⚠️ ছবি পাঠানো যায়নি (' + String(why).slice(0, 120) + ')');   // ছবি না গেলেও অর্ডার পৌঁছায়
 }
 async function sendToTelegram(text) {
   const ctrl = new AbortController();
