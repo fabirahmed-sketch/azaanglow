@@ -53,7 +53,7 @@ const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt
 const bn = s => String(s).replace(/\d/g, d => '০১২৩৪৫৬৭৮৯'[d]);
 const tk = n => bn((+n || 0).toLocaleString('en-US')) + '৳';
 const dt = t => t?.toDate ? t.toDate().toLocaleString('bn-BD', {dateStyle:'medium', timeStyle:'short'}) : '…';
-const toast = m => { const t = $('#toast'); t.textContent = m; t.classList.remove('hidden'); clearTimeout(toast.t); toast.t = setTimeout(() => t.classList.add('hidden'), 2500); };
+const toast = (m, ms = 2500) => { const t = $('#toast'); t.textContent = m; t.classList.remove('hidden'); clearTimeout(toast.t); toast.t = setTimeout(() => t.classList.add('hidden'), ms); };
 const ST = { pending:['পেন্ডিং','bg-yellow-100 text-yellow-800'], confirmed:['কনফার্ম','bg-blue-100 text-blue-800'], shipped:['শিপড','bg-purple-100 text-purple-800'], delivered:['ডেলিভারড','bg-green-100 text-green-800'], cancelled:['ক্যান্সেল','bg-red-100 text-red-800'] };
 const badge = s => `<span class="px-2 py-0.5 rounded-full text-xs font-bold ${ST[s]?.[1] || ''}">${ST[s]?.[0] || s}</span>`;
 const TABS = [['dash','ড্যাশবোর্ড'],['products','প্রোডাক্ট'],['sections','ফিচারড সেকশন ও ক্যাটাগরি'],['brands','ব্র্যান্ড'],['orders','অর্ডার'],['customers','কাস্টমার'],['promos','প্রমো কোড'],['banners','ব্যানার'],['offers','অফার আইকন'],['popups','পপআপ এড'],['settings','সেটিংস']];
@@ -564,12 +564,13 @@ async function syncCatalog(force) {
     setSync('❌ ক্যাটালগ আপডেট হয়নি: ' + (e.code || e.message) + (e.code === 'permission-denied' ? ' — Firebase Rules এ catalog এর অনুমতি যোগ করুন' : ''));
   } finally { syncBusy = false; if (syncAgain) { syncAgain = false; schedSync(); } }
 }
+const isExt = x => /^https?:\/\//i.test(String(x)) && !/res\.cloudinary\.com/i.test(String(x));
 function vSyncBar() {
-  const heavy = D.products.filter(p => (p.images || []).some(isData)).length;
+  const heavy = D.products.filter(p => (p.images || []).some(isData)).length, ext = D.products.filter(p => (p.images || []).some(isExt)).length;
   return `<div class="card p-4 mb-3 text-sm"><p class="font-semibold">⚡ সাইটের ক্যাটালগ (রিড কমানোর ব্যবস্থা)</p>
   <p class="text-xs text-black/60 mt-1">প্রোডাক্ট বদলালে সাইটের জন্য হালকা তালিকা নিজে থেকে তৈরি হয়, তাই ভিজিটরের রিড অনেক কম লাগে। সাধারণত কিছু করতে হবে না।</p>
   <p id="syncStat" class="text-xs font-semibold mt-2">${esc(syncMsg || 'অপেক্ষা করছে…')}</p>
-  <div class="flex flex-wrap gap-2 mt-2"><button class="btn2" data-act="syncnow">🔄 এখনই আপডেট করুন</button>${heavy ? `<button class="btn2" data-act="migimgs">☁ পুরনো ${bn(heavy)}টি প্রোডাক্টের ছবি Cloudinary-তে সরান</button>` : ''}</div></div>`;
+  <div class="flex flex-wrap gap-2 mt-2"><button class="btn2" data-act="syncnow">🔄 এখনই আপডেট করুন</button>${heavy ? `<button class="btn2" data-act="migimgs">☁ পুরনো ${bn(heavy)}টি প্রোডাক্টের ছবি Cloudinary-তে সরান</button>` : ''}${ext ? `<button class="btn2" data-act="migext">🌐 অন্য সাইটের ${bn(ext)}টি প্রোডাক্টের ছবি নিজের Cloudinary-তে আনুন (টেলিগ্রামে ছবি পাঠাতে দরকার)</button>` : ''}</div></div>`;
 }
 async function migrateImages() {
   const todo = D.products.filter(p => (p.images || []).some(isData));
@@ -584,6 +585,24 @@ async function migrateImages() {
     toast('ছবি সরানো হচ্ছে… ' + bn(done + fail) + '/' + bn(todo.length));
   }
   toast(bn(done) + 'টি সরানো হয়েছে ✅' + (fail ? ` · ${bn(fail)}টি হয়নি: ${err}` : ''));
+}
+
+// অন্য সাইটের লিংক করা ছবি (যেমন ইমপোর্টের সময় আসা) নিজের Cloudinary-তে কপি করে; না পারলে আগের লিংকই থাকে
+async function migrateExternal() {
+  const todo = D.products.filter(p => (p.images || []).some(isExt));
+  if (!todo.length) return toast('অন্য সাইটের কোনো ছবি নেই ✅');
+  if (!confirm(bn(todo.length) + 'টি প্রোডাক্টের ছবি নিজের Cloudinary-তে আনা হবে। পেজ বন্ধ করবেন না। শুরু করবেন?')) return;
+  let ok = 0, fail = 0, err = '', n = 0;
+  for (const p of todo) {
+    const imgs = []; let changed = false;
+    for (const src of p.images) {
+      if (!isExt(src)) { imgs.push(src); continue; }
+      try { imgs.push(await uploadCld(src)); ok++; changed = true; } catch (e) { fail++; err = e.message; imgs.push(src); }
+    }
+    if (changed) { try { await updateDoc(doc(db, 'products', p.id), { images: imgs }); } catch (e) { err = e.code || e.message; } }
+    toast('ছবি আনা হচ্ছে… ' + bn(++n) + '/' + bn(todo.length));
+  }
+  toast(bn(ok) + 'টি ছবি এসেছে ✅' + (fail ? ` · ${bn(fail)}টি আনা যায়নি (${err})` : ''), 6000);
 }
 
 /* ---------- Actions ---------- */
@@ -658,6 +677,7 @@ const A = {
   },
   syncnow: () => { if (!firstLoad.products) return toast('ডাটা লোড হচ্ছে, একটু পরে চেষ্টা করুন'); syncCatalog(true); },
   migimgs: migrateImages,
+  migext: migrateExternal,
   impgo: impRun,
   impsample: impSample,
   order: b => orderModal(D.orders.find(o => o.id === b.dataset.id)),
