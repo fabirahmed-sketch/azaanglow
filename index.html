@@ -300,29 +300,8 @@
     </select>
   </div>
 
-  <!-- Group 1: Golden & Rose sandalwood -->
-  <div id="sandalSec">
-    <div class="flex items-end justify-between gap-3 mb-5 pb-3 border-b border-black/10">
-      <div>
-        <h3 class="font-display text-xl sm:text-2xl font-extrabold">Sandalwood Collection</h3>
-        <p class="text-sm text-black/55 mt-0.5">Golden &amp; Rose sandalwood brushes, combs and massagers</p>
-      </div>
-      <span id="sandalCount" class="shrink-0 px-3 py-1 rounded-full bg-leaf-100 text-leaf-800 text-xs font-bold"></span>
-    </div>
-    <div id="sandalGrid" class="pcar"></div>
-  </div>
-
-  <!-- Group 2: Bamboo wood -->
-  <div id="bambooSec" class="mt-14">
-    <div class="flex items-end justify-between gap-3 mb-5 pb-3 border-b border-black/10">
-      <div>
-        <h3 class="font-display text-xl sm:text-2xl font-extrabold">Bamboo Wood Collection</h3>
-        <p class="text-sm text-black/55 mt-0.5">Natural bamboo wood hair brushes</p>
-      </div>
-      <span id="bambooCount" class="shrink-0 px-3 py-1 rounded-full bg-leaf-100 text-leaf-800 text-xs font-bold"></span>
-    </div>
-    <div id="bambooGrid" class="pcar"></div>
-  </div>
+  <!-- Top collections: K-Beauty, Face, Bath & Body (filled by renderProducts) -->
+  <div id="topSecs"></div>
 
   <!-- Other categories (Face, Lip, Eye, Makeup...) -->
   <div id="otherSec" class="mt-14 hidden scroll-mt-28">
@@ -333,7 +312,8 @@
       </div>
       <span id="otherCount" class="shrink-0 px-3 py-1 rounded-full bg-leaf-100 text-leaf-800 text-xs font-bold"></span>
     </div>
-    <div id="otherGrid" class="pcar"></div>
+    <div id="otherGrid" class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3 sm:gap-5"></div>
+    <div id="otherMore" class="hidden text-center mt-8"><button type="button" data-othermore class="px-8 py-3 rounded-full bg-ink text-white text-sm font-bold hover:bg-leaf-500 hover:text-ink transition"></button></div>
   </div>
 
   <p id="emptyMsg" class="hidden text-center text-black/60 py-16"></p>
@@ -371,19 +351,6 @@
       <h3 class="mt-4 font-bold">Cash on Delivery</h3>
       <p class="text-sm text-black/60 mt-1">Check your order first, then pay.</p>
     </div>
-  </div>
-</section>
-
-<!-- Coming soon / notify -->
-<section id="notify" class="max-w-7xl mx-auto px-4 py-6 sm:py-8">
-  <div class="rounded-3xl bg-leaf-100 border border-leaf-300 px-6 py-10 sm:px-12 sm:py-14 text-center">
-    <p class="text-leaf-800 text-sm font-bold tracking-widest uppercase">Coming soon</p>
-    <h2 class="font-display text-2xl sm:text-4xl font-extrabold mt-2">Skincare, Cosmetics &amp; Makeup</h2>
-    <p class="text-black/65 mt-3 text-sm sm:text-base max-w-xl mx-auto">We are adding more authentic beauty essentials to Azaan. Leave your email and be the first to know when they launch.</p>
-    <form id="notifyForm" class="mt-6 flex flex-col sm:flex-row gap-3 max-w-lg mx-auto">
-      <input type="email" required placeholder="Your email address" aria-label="Email address" class="flex-1 rounded-full px-5 py-3 text-sm bg-white border border-black/10 outline-none focus:ring-2 focus:ring-leaf-500">
-      <button class="rounded-full bg-ink hover:bg-leaf-500 hover:text-ink text-white px-7 py-3 font-bold text-sm transition">Notify me</button>
-    </form>
   </div>
 </section>
 
@@ -716,7 +683,7 @@ const DEPTS = [
 
 /* ---------- State ---------- */
 let cart = {}, wish = new Set(), activeCat = 'All', query = '', sortBy = 'default', showWish = false;
-let qvId = null, qvQty = 1, qvShade = '', qvVariant = '';
+let qvId = null, qvQty = 1, qvShade = '', qvVariant = '', qvImg = -1;
 let promoApplied = '', promoErr = '', showingSuccess = false, ordering = false, currentOrderId = null, lastOrderText = '';
 try {
   cart = JSON.parse(localStorage.getItem('azn2_cart') || '{}');
@@ -842,6 +809,20 @@ function renderBest() {
   $('#bestsellers').classList.toggle('hidden', !bl.length);
 }
 
+const TOP_DEFAULT = [
+  { cat: 'K-Beauty', sub: 'Authentic Korean skincare', pins: [] },
+  { cat: 'Face', sub: 'Toners, serums, creams and more for your face', pins: [] },
+  { cat: 'Bath & Body', sub: 'Body care and bath essentials', pins: [] }
+];
+let HOME_SECS = null;   // এডমিনের "হোমপেজ সেকশন" ট্যাব থেকে আসে; না থাকলে ডিফল্ট
+const pinSort = (arr, pins) => { if (!pins || !pins.length) return arr; const m = new Map(pins.map((id, i) => [id, i])); return arr.slice().sort((a, b) => (m.has(a.fid) ? m.get(a.fid) : 1e9) - (m.has(b.fid) ? m.get(b.fid) : 1e9)); };
+const TOP_LIMIT = 20, OTHER_STEP = 24;
+let otherList = [], otherShown = 0, lastSig = '';
+function drawOtherMore() {
+  const left = otherList.length - otherShown, box = $('#otherMore');
+  box.classList.toggle('hidden', left <= 0);
+  if (left > 0) box.firstElementChild.textContent = 'Show more products (' + left + ' left)';
+}
 function renderProducts() {
   const q = query.trim().toLowerCase();
   const list = PRODUCTS.filter((p) =>
@@ -853,18 +834,43 @@ function renderProducts() {
   if (sortBy === 'high') list.sort((a, b) => b.offer - a.offer);
   if (sortBy === 'disc') list.sort((a, b) => pct(b) - pct(a));
 
-  [['sandalwood', 'sandal'], ['bamboo', 'bamboo']].forEach(([group, key]) => {
-    const items = list.filter((p) => (p.groups || [p.group]).includes(group));
-    $('#' + key + 'Grid').innerHTML = items.map(productCard).join('');
-    $('#' + key + 'Count').textContent = items.length + (items.length === 1 ? ' product' : ' products');
-    $('#' + key + 'Sec').classList.toggle('hidden', items.length === 0);
-  });
+  // Home view (no filter): K-Beauty, Face, Bath & Body on top, everything else under "More Products".
+  // With a filter / search / brand / wishlist: one flat result list.
+  const filtering = showWish || activeCat !== 'All' || !!activeBrand || !!q;
+  const secs = HOME_SECS || TOP_DEFAULT, byDefault = sortBy === 'default';
+  let others = list;
+  if (filtering) {
+    $('#topSecs').innerHTML = '';
+    if (byDefault && !showWish && !activeBrand && !q && activeCat !== 'All') { const sc = secs.find((x) => x.cat === activeCat); if (sc) others = pinSort(list, sc.pins); }
+  } else {
+    const inTop = new Set();
+    $('#topSecs').innerHTML = secs.map(({ cat, sub, pins }) => {
+      let all = list.filter((p) => (p.cats || [p.cat]).includes(cat));
+      if (!all.length) return '';
+      if (byDefault) all = pinSort(all, pins);
+      all.forEach((p) => inTop.add(p.id));
+      return `<div class="mb-14">
+      <div class="flex items-end justify-between gap-3 mb-5 pb-3 border-b border-black/10">
+        <div>
+          <h3 class="font-display text-xl sm:text-2xl font-extrabold">${esc(cat)}</h3>
+          ${sub ? `<p class="text-sm text-black/55 mt-0.5">${esc(sub)}</p>` : ''}
+        </div>
+        <button type="button" data-viewall="${esc(cat)}" class="shrink-0 px-3 py-1 rounded-full bg-leaf-100 text-leaf-800 text-xs font-bold hover:bg-leaf-500 hover:text-ink transition">${all.length}${all.length === 1 ? ' product' : ' products'} · View all</button>
+      </div>
+      <div class="pcar">${all.slice(0, TOP_LIMIT).map(productCard).join('')}</div>
+    </div>`;
+    }).join('');
+    others = list.filter((p) => !inTop.has(p.id));
+  }
 
-  const others = list.filter((p) => { const g = p.groups || [p.group]; return !g.includes('sandalwood') && !g.includes('bamboo'); });
+  const sig = [activeCat, activeBrand, q, showWish, sortBy].join('|');
+  otherShown = Math.min(others.length, sig === lastSig ? Math.max(otherShown, OTHER_STEP) : OTHER_STEP);
+  lastSig = sig; otherList = others;
   $('#otherTitle').textContent = activeBrand ? activeBrand : (activeCat === 'All' || showWish ? 'More Products' : activeCat);
-  $('#otherGrid').innerHTML = others.map(productCard).join('');
+  $('#otherGrid').innerHTML = others.slice(0, otherShown).map(productCard).join('');
   $('#otherCount').textContent = others.length + (others.length === 1 ? ' product' : ' products');
   $('#otherSec').classList.toggle('hidden', others.length === 0);
+  drawOtherMore();
 
   const empty = $('#emptyMsg');
   empty.classList.toggle('hidden', list.length > 0);
@@ -880,8 +886,9 @@ function renderQuick() {
     <button data-qvclose class="absolute top-3 right-3 z-10 w-9 h-9 rounded-full bg-white shadow grid place-items-center hover:bg-leaf-100" aria-label="Close">✕</button>
     <div class="grid md:grid-cols-2">
       <div class="relative bg-leaf-50">
-        <img src="${vImg(p, qvVariant)}" alt="${esc(p.name)}" class="w-full aspect-[4/5] md:h-full object-cover">
+        <img src="${(qvImg >= 0 && p.imgs && p.imgs[qvImg]) || vImg(p, qvVariant)}" alt="${esc(p.name)}" class="w-full aspect-[4/5] md:h-full object-cover">
         ${d > 0 ? `<span class="absolute top-3 left-3 px-3 py-1 rounded-full text-xs font-bold bg-leaf-500 text-ink shadow">-${d}%</span>` : ''}
+        ${p.imgs && p.imgs.length > 1 ? `<div class="absolute bottom-3 left-3 right-3 flex gap-2 overflow-x-auto pb-1">${p.imgs.map((u, i) => `<button type="button" data-qvthumb="${i}" class="shrink-0 w-12 h-14 rounded-lg overflow-hidden border-2 bg-white ${((qvImg >= 0 ? qvImg : -1) === i) ? 'border-ink' : 'border-white/80'} shadow"><img src="${u}" alt="" loading="lazy" class="w-full h-full object-cover"></button>`).join('')}</div>` : ''}
       </div>
       <div class="p-6 sm:p-8 flex flex-col">
         <p class="text-xs text-leaf-700 font-bold uppercase tracking-wide">${p.cat}</p>
@@ -916,7 +923,7 @@ function renderQuick() {
     </div>`;
 }
 function openQuick(id) {
-  qvId = id; qvQty = 1; qvShade = ''; qvVariant = ''; renderQuick();
+  qvId = id; qvQty = 1; qvShade = ''; qvVariant = ''; qvImg = -1; renderQuick();
   $('#qvOverlay').classList.remove('hidden');
   document.body.style.overflow = 'hidden';
 }
@@ -1368,6 +1375,16 @@ function renderSuccess(o, demo) {
 
 /* ---------- Events ---------- */
 document.addEventListener('click', (e) => {
+  const va = e.target.closest('[data-viewall]');
+  if (va) {
+    activeCat = va.dataset.viewall; showWish = false; activeBrand = ''; renderBrands(); renderChips(); renderProducts();
+    return void setTimeout(() => document.getElementById('otherSec').scrollIntoView({ behavior: 'smooth' }), 60);
+  }
+  if (e.target.closest('[data-othermore]')) {
+    const nxt = otherList.slice(otherShown, otherShown + OTHER_STEP);
+    $('#otherGrid').insertAdjacentHTML('beforeend', nxt.map(productCard).join(''));
+    otherShown += nxt.length; return drawOtherMore();
+  }
   const soon = e.target.closest('[data-soon]');
   if (soon) {
     e.preventDefault(); closeMenu();
@@ -1378,8 +1395,8 @@ document.addEventListener('click', (e) => {
       if (isCheckout()) location.hash = '#haircare';
       return void setTimeout(() => (os.classList.contains('hidden') ? document.getElementById('haircare') : os).scrollIntoView({ behavior: 'smooth' }), 60);
     }
-    toast(soon.dataset.soon + ' is coming soon!');
-    return goTo('notify');
+    toast('No ' + soon.dataset.soon + ' products yet.');
+    return goTo('haircare');
   }
 
   if (e.target.closest('[data-tgmanual]')) {
@@ -1402,8 +1419,10 @@ document.addEventListener('click', (e) => {
   if (e.target.closest('[data-qvwish]')) { toggleWish(qvId); return renderQuick(); }
   const shBtn = e.target.closest('[data-qvshade]');
   if (shBtn) { const sh = (byId(qvId).shades || [])[+shBtn.dataset.qvshade]; qvShade = sh ? sh.name : ''; return renderQuick(); }
+  const thBtn = e.target.closest('[data-qvthumb]');
+  if (thBtn) { qvImg = +thBtn.dataset.qvthumb; return renderQuick(); }
   const vaBtn = e.target.closest('[data-qvvariant]');
-  if (vaBtn) { const vv = (byId(qvId).variants || [])[+vaBtn.dataset.qvvariant]; qvVariant = vv ? vv.name : ''; return renderQuick(); }
+  if (vaBtn) { const vv = (byId(qvId).variants || [])[+vaBtn.dataset.qvvariant]; qvVariant = vv ? vv.name : ''; qvImg = -1; return renderQuick(); }
   if (e.target.closest('[data-qvbuy]') || e.target.closest('[data-qvadd]')) {
     if (hasVariants(byId(qvId)) && !qvVariant) return toast('আগে সাইজ / ml বেছে নিন 📏');
     if (hasShades(byId(qvId)) && !qvShade) return toast('আগে একটি শেড বেছে নিন 🎨');
@@ -1458,9 +1477,8 @@ function normaliseSearch(s) {
 function searchScore(p, rawQuery) {
   const q = normaliseSearch(rawQuery);
   if (!q) return 0;
-  const name = normaliseSearch(p.name);
-  const cat = normaliseSearch(p.cat);
-  const desc = normaliseSearch(p.desc);
+  const c = p._sn || (p._sn = { name: normaliseSearch(p.name), cat: normaliseSearch(p.cat), desc: normaliseSearch(p.desc) });
+  const name = c.name, cat = c.cat, desc = c.desc;
   const haystack = `${name} ${cat} ${desc}`;
   const words = q.split(/\s+/).filter(Boolean);
   let score = 0;
@@ -1520,15 +1538,18 @@ function openSearch(value = '') {
 }
 function closeSearch() {
   $('#searchOverlay').classList.add('hidden');
+  if (_gridDirty) { _gridDirty = false; renderProducts(); }
   if ($('#qvOverlay').classList.contains('hidden') && $('#cartOverlay').classList.contains('hidden')) {
     document.body.style.overflow = '';
   }
 }
+let _searchT = 0, _gridDirty = false;
 function onSearch(v) {
   query = v;
   $('#searchInput').value = v; $('#searchInputMobile').value = v;
-  renderProducts();
-  renderSearchResults(v);
+  _gridDirty = true;
+  clearTimeout(_searchT);
+  _searchT = setTimeout(() => renderSearchResults(v), 140);
 }
 $('#searchInput').addEventListener('focus', (e) => openSearch(e.target.value));
 $('#searchInputMobile').addEventListener('focus', (e) => openSearch(e.target.value));
@@ -1558,7 +1579,6 @@ $('#checkoutBtn').addEventListener('click', () => {
   closeCart();
   if (isCheckout()) renderCheckout(); else location.hash = '#checkout';
 });
-$('#notifyForm').addEventListener('submit', (e) => { e.preventDefault(); e.target.reset(); toast('Thanks! We will let you know 💚'); });
 
 /* ---------- এডমিন প্যানেল (Firebase) সংযোগ ---------- */
 const INIT_FREE = 1000;
@@ -1647,6 +1667,8 @@ window.azApplyProducts = (docs, force) => {
 window.azApplySettings = (st) => {
   applyHero(st.heroImgs);
   CAT_CFG = Array.isArray(st.catCfg) ? st.catCfg : []; applyBrandCfg(st.brands); renderCats(); renderBrands();
+  HOME_SECS = Array.isArray(st.homeSecs) ? st.homeSecs.filter((x) => x && x.cat).map((x) => ({ cat: String(x.cat), sub: String(x.sub || ''), pins: Array.isArray(x.pins) ? x.pins.map(String) : [] })) : null;
+  renderProducts();
   FEES = { ctg: +(st.feeCtg ?? 60), dhaka: +(st.feeDhaka ?? 99), other: +(st.feeOther ?? 120) };
   DFEES = (st.districtFees && typeof st.districtFees === 'object') ? st.districtFees : {};
   if (+st.freeShipAt > 0) FREE_SHIP_AT = +st.freeShipAt;
