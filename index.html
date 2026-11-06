@@ -68,6 +68,23 @@
   .co-input[aria-invalid="true"] { border-color:#dc2626; background:#fef2f2; }
   @media (prefers-reduced-motion: reduce) { .float, .fade-in, .modal-card, .marquee-track { animation:none; } html{scroll-behavior:auto;} }
 </style>
+<!-- Meta Pixel Code -->
+<script>
+!function(f,b,e,v,n,t,s)
+{if(f.fbq)return;n=f.fbq=function(){n.callMethod?
+n.callMethod.apply(n,arguments):n.queue.push(arguments)};
+if(!f._fbq)f._fbq=n;n.push=n;n.loaded=!0;n.version='2.0';
+n.queue=[];t=b.createElement(e);t.async=!0;
+t.src=v;s=b.getElementsByTagName(e)[0];
+s.parentNode.insertBefore(t,s)}(window, document,'script',
+'https://connect.facebook.net/en_US/fbevents.js');
+fbq('init', '2030629185007983');
+fbq('track', 'PageView');
+</script>
+<noscript><img height="1" width="1" style="display:none"
+src="https://www.facebook.com/tr?id=2030629185007983&ev=PageView&noscript=1"
+/></noscript>
+<!-- End Meta Pixel Code -->
 </head>
 <body class="font-sans antialiased">
 
@@ -922,7 +939,13 @@ function renderQuick() {
       </div>
     </div>`;
 }
+/* ---------- Meta Pixel ইভেন্ট ---------- */
+const fbTrack = (ev, params, opts) => { try { if (window.fbq) (opts ? fbq('track', ev, params, opts) : fbq('track', ev, params)); } catch (e) {} };
+let fbCheckoutSent = false;
+const fbContents = (lines) => lines.map((l) => ({ id: String(l.p.id), quantity: l.qty, item_price: l.unit.offer }));
+
 function openQuick(id) {
+  try { const p = byId(id); if (p) fbTrack('ViewContent', { content_ids: [String(p.id)], content_name: p.name, content_type: 'product', content_category: p.cat || '', value: p.offer, currency: 'BDT' }); } catch (e) {}
   qvId = id; qvQty = 1; qvShade = ''; qvVariant = ''; qvImg = -1; renderQuick();
   $('#qvOverlay').classList.remove('hidden');
   document.body.style.overflow = 'hidden';
@@ -993,6 +1016,7 @@ function addToCart(id, qty = 1, shade = '', variant = '') {
   if (hasVariants(byId(id)) && !variant) return openQuick(id);
   const k = ck(id, shade, variant);
   cart[k] = (cart[k] || 0) + qty;
+  try { const p = byId(id), u = unitOf(p, variant); fbTrack('AddToCart', { content_ids: [String(id)], content_name: p.name, content_type: 'product', value: u.offer * qty, currency: 'BDT' }); } catch (e) {}
   renderCart(); bump($('#cartCount'));
   toast('Added to cart ✓');
 }
@@ -1028,6 +1052,8 @@ function route() {
   }
 }
 window.addEventListener('hashchange', route);
+const fbCheckout = () => { try { if (!isCheckout() || fbCheckoutSent) return; const t = checkoutTotals(); if (!t.count) return; fbCheckoutSent = true; fbTrack('InitiateCheckout', { content_ids: t.lines.map((l) => String(l.p.id)), contents: fbContents(t.lines), content_type: 'product', num_items: t.count, value: t.total, currency: 'BDT' }); } catch (e) {} };
+window.addEventListener('hashchange', () => { if (!isCheckout()) fbCheckoutSent = false; else fbCheckout(); });
 
 /* =====================================================================
    চেকআউট
@@ -1305,6 +1331,8 @@ $('#coForm').addEventListener('submit', async (e) => {
   setOrdering(true);
   try {
     await saveOrder(order, t);
+    fbTrack('Purchase', { content_ids: t.lines.map((l) => String(l.p.id)), contents: fbContents(t.lines), content_type: 'product', num_items: t.count, value: t.total, currency: 'BDT' }, { eventID: String(order.id) });
+    fbCheckoutSent = false;
     sendOrderToTelegram(order, text).catch((x) => console.warn('Telegram failed:', x));
     lastOrderText = text;
     showingSuccess = true;
