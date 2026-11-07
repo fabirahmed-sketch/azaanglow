@@ -1670,6 +1670,41 @@ const numId = (fid) => {
   return 1000 + (h % 900000);
 };
 const secOf = (d) => Array.isArray(d.sections) ? d.sections : [d.bestSeller ? 'best' : null, d.group === 'bamboo' ? 'bamboo' : (d.group === 'sandalwood' || (d.cats || [d.cat]).concat(d.featCats || []).some((c) => BASE_SUB_CATS.includes(c))) ? 'sandalwood' : null].filter(Boolean);
+/* ---------- ক্যাটাগরি লিংক (#cat=নাম) ও মেনুতে নতুন ক্যাটাগরি ---------- */
+const MENU_STATIC = ['Face', 'Lip', 'Hair', 'Bath & Body', 'Eye', 'Makeup', 'Fragrance', 'K-Beauty', 'Pharmacy Items', 'Others'];
+const allCatNames = () => [...new Set(PRODUCTS.flatMap((p) => p.cats || [p.cat]).filter(Boolean))];
+function renderMenuCats() {
+  document.querySelectorAll('[data-dyn-menu]').forEach((e) => e.remove());
+  const hid = (n) => CAT_CFG.some((x) => x.name === n && x.hidden);
+  const names = allCatNames().filter((n) => !MENU_STATIC.includes(n) && !BASE_SUB_CATS.includes(n) && !hid(n));
+  if (!names.length) return;
+  const dn = document.querySelector('header nav[aria-label="Main"] a[href="#bestsellers"]'), mn = document.querySelector('#mobileMenu nav a[href="#bestsellers"]');
+  names.forEach((n) => {
+    const h = '#cat=' + encodeURIComponent(n);
+    if (dn) dn.insertAdjacentHTML('beforebegin', `<a href="${h}" data-soon="${esc(n)}" data-dyn-menu class="hover:text-leaf-700">${esc(n)}</a>`);
+    if (mn) mn.insertAdjacentHTML('beforebegin', `<a href="${h}" data-soon="${esc(n)}" data-dyn-menu class="mobile-link py-4 border-b border-black/10">${esc(n)}</a>`);
+  });
+}
+let hashCatDone = '';
+function applyHashCat(force) {
+  const m = /^#cat=(.+)$/.exec(location.hash); if (!m) return;
+  let nm = m[1]; try { nm = decodeURIComponent(m[1].replace(/\+/g, ' ')); } catch (e) {}
+  const real = allCatNames().find((c) => c.toLowerCase() === nm.toLowerCase()); if (!real) return;
+  if (!force && hashCatDone === location.hash) return;
+  hashCatDone = location.hash;
+  activeCat = real; showWish = false; activeBrand = ''; renderBrands(); renderChips(); renderProducts();
+  setTimeout(() => { const os = document.getElementById('otherSec'); (os && !os.classList.contains('hidden') ? os : document.getElementById('haircare')).scrollIntoView({ behavior: 'smooth' }); }, 120);
+}
+let hashProdDone = '';
+function applyHashProd(force) {
+  const m = /^#p=(\d+)$/.exec(location.hash); if (!m) return;
+  const p = byId(+m[1]); if (!p) return;
+  if (!force && hashProdDone === location.hash) return;
+  hashProdDone = location.hash; openQuick(p.id);
+}
+window.addEventListener('hashchange', () => { applyHashCat(true); applyHashProd(true); });
+renderMenuCats();
+
 window.azApplyProducts = (docs, force) => {
   if (!docs.length && !force) return;                       // এডমিনে এখনো কিছু নেই: বিল্ট-ইন প্রোডাক্টই থাকবে
   const act = docs.filter((d) => d.active !== false && d.name && +d.offer > 0 && (+d.stock || 0) > 0)
@@ -1691,10 +1726,11 @@ window.azApplyProducts = (docs, force) => {
   document.querySelectorAll('[data-maxdisc]').forEach((el) => { el.textContent = mx; });
   document.querySelectorAll('[data-count]').forEach((el) => { el.textContent = list.length; });
   renderCats(); renderBrands(); renderChips(); renderProducts(); renderCart(); renderCheckout();
+  renderMenuCats(); applyHashCat(); applyHashProd();
 };
 window.azApplySettings = (st) => {
   applyHero(st.heroImgs);
-  CAT_CFG = Array.isArray(st.catCfg) ? st.catCfg : []; applyBrandCfg(st.brands); renderCats(); renderBrands();
+  CAT_CFG = Array.isArray(st.catCfg) ? st.catCfg : []; applyBrandCfg(st.brands); renderCats(); renderBrands(); renderMenuCats();
   HOME_SECS = Array.isArray(st.homeSecs) ? st.homeSecs.filter((x) => x && x.cat).map((x) => ({ cat: String(x.cat), sub: String(x.sub || ''), pins: Array.isArray(x.pins) ? x.pins.map(String) : [] })) : null;
   renderProducts();
   FEES = { ctg: +(st.feeCtg ?? 60), dhaka: +(st.feeDhaka ?? 99), other: +(st.feeOther ?? 120) };

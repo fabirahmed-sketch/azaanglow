@@ -240,8 +240,9 @@ function vCats() {
     return `<div class="card p-3"><div class="flex justify-between items-center mb-2 gap-2"><h3 class="font-bold break-words min-w-0">${esc(k)}</h3><span class="text-xs font-bold px-2 py-0.5 rounded-full bg-black/10 shrink-0">${bn(inC.length)}টি</span></div>
     <div class="flex items-center gap-2 mb-2">${catEnt(k).icon ? `<img src="${esc(catEnt(k).icon)}" class="h-10 w-10 object-cover rounded-full bg-gray-50" alt="">` : '<span class="text-xs text-black/50">আইকন নেই / বিল্ট-ইন</span>'}<label class="btn2 !py-1 !px-2 text-xs cursor-pointer">আইকন<input type="file" accept="image/*" class="hidden" data-in="caticon" data-cat="${esc(k)}"></label>${catEnt(k).icon ? `<button class="btn2 red !py-1 !px-2 text-xs" data-act="caticonrm" data-cat="${esc(k)}">আইকন সরান</button>` : ''}</div>
     <div class="flex gap-1.5 mb-2"><button class="btn2 !py-1 !px-2 text-xs" data-act="catup" data-cat="${esc(k)}">↑</button><button class="btn2 !py-1 !px-2 text-xs" data-act="catdown" data-cat="${esc(k)}">↓</button><button class="btn2 !py-1 !px-2 text-xs" data-act="cathide" data-cat="${esc(k)}">${catEnt(k).hidden ? 'সাইটে দেখান' : 'সাইটে লুকান'}</button></div>
+    <div class="flex gap-1.5 mb-2 items-center"><input readonly class="inp !py-1 text-xs" dir="ltr" value="${esc(location.origin + '/#cat=' + encodeURIComponent(k))}" onfocus="this.select()"><button class="btn2 !py-1 !px-2 text-xs shrink-0" data-act="catlink" data-cat="${esc(k)}">🔗 লিংক কপি</button></div>
     <div class="flex gap-2 mb-2"><select id="cmv-${i}" class="inp"><option value="">ট্রান্সফারের ক্যাটাগরি…</option>${allCats().filter(x => x !== k).map(x => `<option value="${esc(x)}">${esc(x)}</option>`).join('')}</select>${inC.length ? `<button class="btn2 shrink-0 text-xs" data-act="catmoveall" data-i="${i}" data-cat="${esc(k)}" aria-label="সব প্রোডাক্ট সরান">সব সরান</button>` : ''}</div>
-    <div class="max-h-96 overflow-y-auto">${inC.map(p => `<div class="flex items-center gap-2 py-1.5 border-b"><img src="${esc(p.images?.[0] || '')}" class="w-10 h-12 object-cover rounded bg-gray-100 shrink-0" alt=""><div class="flex-1 min-w-0"><p class="text-sm leading-snug">${esc(p.name)}</p>${hideNote(p) ? `<p class="text-xs red font-bold">সাইটে দেখাচ্ছে না: ${hideNote(p)}</p>` : ''}</div><button class="btn2 shrink-0 text-xs" data-act="catmove" data-id="${p.id}" data-i="${i}" data-cat="${esc(k)}" aria-label="অন্য ক্যাটাগরিতে সরান">↪</button><button class="btn2 red shrink-0" data-act="catrm" data-id="${p.id}" data-cat="${esc(k)}" aria-label="ক্যাটাগরি থেকে বাদ দিন">✕</button></div>`).join('') || '<p class="text-sm text-black/50 py-2">এই ক্যাটাগরিতে কোনো প্রোডাক্ট নেই (সাইটে আইকন দেখাবে না)</p>'}</div>
+    <div class="max-h-96 overflow-y-auto">${inC.map(p => `<div class="flex items-center gap-2 py-1.5 border-b"><img src="${esc(p.images?.[0] || '')}" class="w-10 h-12 object-cover rounded bg-gray-100 shrink-0" alt=""><div class="flex-1 min-w-0"><p class="text-sm leading-snug">${esc(p.name)}</p>${hideNote(p) ? `<p class="text-xs red font-bold">সাইটে দেখাচ্ছে না: ${hideNote(p)}</p>` : ''}<p class="text-xs text-black/60">${tk(p.offer)} · স্টক ${bn(+p.stock || 0)}</p></div><button class="btn2 shrink-0 text-xs" data-act="pedit" data-id="${p.id}" aria-label="প্রোডাক্ট এডিট করুন">✏️ এডিট</button><button class="btn2 shrink-0 text-xs" data-act="catmove" data-id="${p.id}" data-i="${i}" data-cat="${esc(k)}" aria-label="অন্য ক্যাটাগরিতে সরান">↪</button><button class="btn2 red shrink-0" data-act="catrm" data-id="${p.id}" data-cat="${esc(k)}" aria-label="ক্যাটাগরি থেকে বাদ দিন">✕</button></div>`).join('') || '<p class="text-sm text-black/50 py-2">এই ক্যাটাগরিতে কোনো প্রোডাক্ট নেই (সাইটে আইকন দেখাবে না)</p>'}</div>
     ${out.length ? `<div class="flex gap-2 mt-3"><select id="cadd-${i}" class="inp"><option value="">প্রোডাক্ট বেছে নিন…</option>${out.map(p => `<option value="${p.id}">${esc(p.name)}</option>`).join('')}</select><button class="btn shrink-0" data-act="catadd" data-i="${i}" data-cat="${esc(k)}">+ যোগ</button></div>` : '<p class="text-xs text-black/50 mt-3">সব প্রোডাক্টই এই ক্যাটাগরিতে আছে</p>'}
     ${isCustom ? `<button class="btn2 red w-full mt-3" data-act="catdelete" data-cat="${esc(k)}">এই ক্যাটাগরি মুছুন</button>` : ''}</div>`;
   }).join('')}</div>`;
@@ -281,6 +282,21 @@ async function setCats(p, arr) {
   try { await updateDoc(doc(db, 'products', p.id), { featCats: arr }); toast('ক্যাটাগরি আপডেট হয়েছে ✅'); } catch (e) { toast('আপডেট হয়নি: ' + e.code); }
 }
 
+const siteNumId = fid => { const m = /^p(\d+)$/.exec(fid); if (m) return +m[1]; let h = 0; for (const c of fid) h = (h * 31 + c.charCodeAt(0)) >>> 0; return 1000 + (h % 900000); };
+function catalogCsv() {
+  const q = v => '"' + String(v ?? '').replace(/"/g, '""').replace(/\r?\n/g, ' ') + '"';
+  const rows = [['id', 'title', 'description', 'availability', 'condition', 'price', 'sale_price', 'link', 'image_link', 'additional_image_link', 'brand', 'product_type']];
+  let skipped = 0;
+  D.products.filter(p => p.active !== false && p.name && +p.offer > 0 && (+p.stock || 0) > 0).forEach(p => {
+    const imgs = (p.images || []).filter(x => /^https?:\/\//i.test(x));
+    if (!imgs.length) { skipped++; return; }
+    const offer = +p.offer, reg = Math.max(+p.regular || offer, offer), id = siteNumId(p.id);
+    rows.push([id, p.name, String(p.desc || p.name).slice(0, 5000), 'in stock', 'new', reg + ' BDT', reg > offer ? offer + ' BDT' : '', location.origin + '/#p=' + id, imgs[0], imgs.slice(1, 10).join(','), p.brand || '', catsOf(p).join(' > ')]);
+  });
+  const blob = new Blob(['\ufeff' + rows.map(r => r.map(q).join(',')).join('\r\n')], { type: 'text/csv;charset=utf-8' });
+  const el = document.createElement('a'); el.href = URL.createObjectURL(blob); el.download = 'meta-catalog.csv'; el.click(); setTimeout(() => URL.revokeObjectURL(el.href), 2000);
+  toast(bn(rows.length - 1) + 'টি প্রোডাক্ট নামল' + (skipped ? ' · ছবির লিংক নেই বলে ' + bn(skipped) + 'টি বাদ' : ''), 5000);
+}
 function vProducts(onlyList) {
   const q = pSearch.toLowerCase(), list = D.products.filter(p => !q || (p.name + p.cat).toLowerCase().includes(q)).sort((a, b) => (a.name || '').localeCompare(b.name || ''));
   const cards = list.map(p => `<div class="card overflow-hidden ${p.active === false ? 'opacity-50' : ''}">
@@ -290,9 +306,12 @@ function vProducts(onlyList) {
     <p class="mt-1"><b>${tk(p.offer)}</b> <s class="text-black/40">${tk(p.regular)}</s></p>
     <p class="text-xs ${+p.stock <= 5 ? 'red font-bold' : 'text-black/60'}">স্টক: ${bn(+p.stock || 0)}${p.active === false ? ' · লুকানো' : ''}</p>
     <p class="text-xs mt-0.5 text-black/60">${secOf(p).length ? 'সেকশন: ' + SECTIONS.filter(s => secOf(p).includes(s[0])).map(s => s[2]).join(' · ') : 'সেকশন: নেই (More Products এ দেখাবে)'}</p>
-    <div class="flex gap-2 mt-2"><button class="btn2 flex-1" data-act="pedit" data-id="${p.id}">এডিট</button><button class="btn2 red" data-act="pdel" data-id="${p.id}">✕</button></div></div></div>`).join('');
+    <div class="flex gap-2 mt-2"><button class="btn2 flex-1" data-act="pedit" data-id="${p.id}">এডিট</button><button class="btn2" data-act="plink" data-id="${p.id}" aria-label="প্রোডাক্টের লিংক কপি">🔗</button><button class="btn2 red" data-act="pdel" data-id="${p.id}">✕</button></div></div></div>`).join('');
   if (onlyList) return cards;
   return `<div class="flex gap-2 mb-3"><input class="inp" placeholder="প্রোডাক্ট খুঁজুন…" value="${esc(pSearch)}" data-in="psearch"><button class="btn shrink-0" data-act="pnew">+ নতুন</button></div>
+  <div class="card p-4 mb-3 text-sm"><p class="font-semibold">📒 Meta (Facebook) ক্যাটালগ CSV</p>
+  <p class="text-xs text-black/60 mt-1">সক্রিয়, স্টকে থাকা ও ছবিসহ প্রোডাক্টের তালিকা Meta Commerce Manager-এ আপলোডের ফরম্যাটে নামবে। প্রতিটা প্রোডাক্টের লিংক হবে <span dir="ltr">${esc(location.origin)}/#p=আইডি</span></p>
+  <div class="mt-2"><button class="btn2" data-act="catalogcsv">⬇ ক্যাটালগ CSV নামান</button></div></div>
   ${vImport()}${vSyncBar()}
   <div id="plist" class="grid grid-cols-2 md:grid-cols-4 gap-3">${cards}</div>`;
 }
@@ -659,6 +678,9 @@ const A = {
   catrm: b => { const p = D.products.find(x => x.id === b.dataset.id); if (p) setCats(p, catsOf(p).filter(x => x !== b.dataset.cat)); },
   catmove: b => { const t = $('#cmv-' + b.dataset.i)?.value; if (!t) return toast('আগে ট্রান্সফারের ক্যাটাগরি বেছে নিন'); const p = D.products.find(x => x.id === b.dataset.id); if (p) setCats(p, [...catsOf(p).filter(x => x !== b.dataset.cat && x !== t), t]); },
   catmoveall: async b => { const t = $('#cmv-' + b.dataset.i)?.value, k = b.dataset.cat; if (!t) return toast('আগে ট্রান্সফারের ক্যাটাগরি বেছে নিন'); const ps = D.products.filter(p => catsOf(p).includes(k)); if (!confirm(bn(ps.length) + 'টি প্রোডাক্ট "' + k + '" থেকে "' + t + '" এ সরাবেন?')) return; try { await Promise.all(ps.map(p => updateDoc(doc(db, 'products', p.id), { featCats: [...catsOf(p).filter(x => x !== k && x !== t), t] }))); toast('ট্রান্সফার হয়েছে ✅'); } catch (e) { toast('হয়নি: ' + e.code); } },
+  catlink: async b => { const u = location.origin + '/#cat=' + encodeURIComponent(b.dataset.cat); try { await navigator.clipboard.writeText(u); toast('লিংক কপি হয়েছে ✅'); } catch (e) { prompt('লিংকটি কপি করুন:', u); } },
+  catalogcsv: catalogCsv,
+  plink: async b => { const u = location.origin + '/#p=' + siteNumId(b.dataset.id); try { await navigator.clipboard.writeText(u); toast('লিংক কপি হয়েছে ✅'); } catch (e) { prompt('লিংকটি কপি করুন:', u); } },
   cathide: b => catPatch(b.dataset.cat, { hidden: !catEnt(b.dataset.cat).hidden }),
   caticonrm: b => catPatch(b.dataset.cat, { icon: '' }),
   homeup: b => homeEdit(+b.dataset.i, (x, l) => moveIn(l, +b.dataset.i, +b.dataset.i - 1)),
