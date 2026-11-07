@@ -625,7 +625,24 @@ function vSyncBar() {
   return `<div class="card p-4 mb-3 text-sm"><p class="font-semibold">⚡ সাইটের ক্যাটালগ (রিড কমানোর ব্যবস্থা)</p>
   <p class="text-xs text-black/60 mt-1">প্রোডাক্ট বদলালে সাইটের জন্য হালকা তালিকা নিজে থেকে তৈরি হয়, তাই ভিজিটরের রিড অনেক কম লাগে। সাধারণত কিছু করতে হবে না।</p>
   <p id="syncStat" class="text-xs font-semibold mt-2">${esc(syncMsg || 'অপেক্ষা করছে…')}</p>
-  <div class="flex flex-wrap gap-2 mt-2"><button class="btn2" data-act="syncnow">🔄 এখনই আপডেট করুন</button>${heavy ? `<button class="btn2" data-act="migimgs">☁ পুরনো ${bn(heavy)}টি প্রোডাক্টের ছবি Cloudinary-তে সরান</button>` : ''}${ext ? `<button class="btn2" data-act="migext">🌐 অন্য সাইটের ${bn(ext)}টি প্রোডাক্টের ছবি নিজের Cloudinary-তে আনুন (টেলিগ্রামে ছবি পাঠাতে দরকার)</button>` : ''}</div></div>`;
+  <div class="flex flex-wrap gap-2 mt-2"><button class="btn2" data-act="syncnow">🔄 এখনই আপডেট করুন</button>${heavy ? `<button class="btn2" data-act="migimgs">☁ পুরনো ${bn(heavy)}টি প্রোডাক্টের ছবি Cloudinary-তে সরান</button>` : ''}${ext ? `<button class="btn2" data-act="migext">🌐 অন্য সাইটের ${bn(ext)}টি প্রোডাক্টের ছবি নিজের Cloudinary-তে আনুন (টেলিগ্রামে ছবি পাঠাতে দরকার)</button>` : ''}</div>${vNoCld()}</div>`;
+}
+// যেসব প্রোডাক্টের ছবি Cloudinary-তে নেই, ক্যাটাগরি অনুযায়ী সাজানো (এখান থেকেই এডিট করা যায়)
+function noCldStatus(p) {
+  const imgs = (p.images || []).filter(Boolean);
+  if (!imgs.length) return 'ছবি নেই';
+  if (imgs.some(isData)) return 'পুরনো ছবি (ফাইলে)';
+  if (imgs.some(isExt)) return 'অন্য সাইটের ছবি';
+  return '';
+}
+function vNoCld() {
+  const list = D.products.map(p => [p, noCldStatus(p)]).filter(x => x[1]);
+  if (!list.length) return '';
+  const g = {}; list.forEach(([p, st]) => { const k = catsOf(p)[0] || p.cat || 'ক্যাটাগরি ছাড়া'; (g[k] = g[k] || []).push([p, st]); });
+  const keys = Object.keys(g).sort((x, y) => g[y].length - g[x].length || x.localeCompare(y));
+  return `<details class="mt-3 border-t pt-3" ${window.__cldOpen ? 'open' : ''} ontoggle="window.__cldOpen=this.open"><summary class="font-semibold cursor-pointer">📂 যেগুলোর ছবি Cloudinary-তে নেই: ${bn(list.length)}টি (ক্যাটাগরি অনুযায়ী)</summary>
+  <div class="mt-2 space-y-2">${keys.map(k => `<details class="rounded-lg bg-black/5 px-3 py-2"><summary class="cursor-pointer font-semibold text-sm">${esc(k)} <span class="text-xs font-bold px-2 py-0.5 rounded-full bg-black/10">${bn(g[k].length)}টি</span></summary>
+    <div class="mt-2">${g[k].sort((x, y) => (x[0].name || '').localeCompare(y[0].name || '')).map(([p, st]) => `<div class="flex items-center gap-2 py-1.5 border-b border-black/10"><img src="${esc((p.images || []).find(x => !isData(x)) || '')}" class="w-10 h-12 object-cover rounded bg-gray-100 shrink-0" alt="" loading="lazy"><div class="flex-1 min-w-0"><p class="text-sm leading-snug">${esc(p.name)}</p><p class="text-xs text-black/60">${esc(st)} · ${tk(p.offer)} · স্টক ${bn(+p.stock || 0)}</p></div><button class="btn2 shrink-0 text-xs" data-act="imgdl" data-id="${p.id}" aria-label="ছবি ডাউনলোড">⬇ ছবি</button><button class="btn2 shrink-0 text-xs" data-act="pedit" data-id="${p.id}">✏️ এডিট</button></div>`).join('')}</div></details>`).join('')}</div></details>`;
 }
 async function migrateImages() {
   const todo = D.products.filter(p => (p.images || []).some(isData));
@@ -680,6 +697,25 @@ const A = {
   catmoveall: async b => { const t = $('#cmv-' + b.dataset.i)?.value, k = b.dataset.cat; if (!t) return toast('আগে ট্রান্সফারের ক্যাটাগরি বেছে নিন'); const ps = D.products.filter(p => catsOf(p).includes(k)); if (!confirm(bn(ps.length) + 'টি প্রোডাক্ট "' + k + '" থেকে "' + t + '" এ সরাবেন?')) return; try { await Promise.all(ps.map(p => updateDoc(doc(db, 'products', p.id), { featCats: [...catsOf(p).filter(x => x !== k && x !== t), t] }))); toast('ট্রান্সফার হয়েছে ✅'); } catch (e) { toast('হয়নি: ' + e.code); } },
   catlink: async b => { const u = location.origin + '/#cat=' + encodeURIComponent(b.dataset.cat); try { await navigator.clipboard.writeText(u); toast('লিংক কপি হয়েছে ✅'); } catch (e) { prompt('লিংকটি কপি করুন:', u); } },
   catalogcsv: catalogCsv,
+  imgdl: async b => {
+    const p = D.products.find(x => x.id === b.dataset.id); const imgs = ((p && p.images) || []).filter(Boolean);
+    if (!imgs.length) return toast('এই প্রোডাক্টে কোনো ছবি নেই');
+    let ok = 0, bad = 0, firstBad = '';
+    for (let i = 0; i < imgs.length; i++) {
+      const src = imgs[i]; let obj = '';
+      try {
+        let url = src;
+        if (!isData(src)) { const r = await fetch(src); if (!r.ok) throw new Error('x'); obj = url = URL.createObjectURL(await r.blob()); }
+        const m = src.match(/^data:image\/(\w+)/) || src.match(/\.(jpe?g|png|webp|gif)(\?|$)/i);
+        const ext = ((m && m[1]) || 'jpg').toLowerCase().replace('jpeg', 'jpg');
+        const el = document.createElement('a'); el.href = url; el.download = String(p.name || 'product').replace(/[^\w-]+/g, '_').slice(0, 40) + '-' + (i + 1) + '.' + ext; document.body.appendChild(el); el.click(); el.remove();
+        if (obj) setTimeout(() => URL.revokeObjectURL(obj), 3000);
+        ok++; await new Promise(r => setTimeout(r, 300));
+      } catch (e) { bad++; if (!firstBad) firstBad = src; }
+    }
+    if (bad && firstBad) window.open(firstBad, '_blank');
+    toast(bn(ok) + 'টি ছবি নামল' + (bad ? ` · ${bn(bad)}টি সরাসরি নামেনি (ওই সাইট আটকাচ্ছে), নতুন ট্যাবে খোলা হয়েছে, ছবিতে চেপে ধরে সেভ করুন` : ''), 6000);
+  },
   plink: async b => { const u = location.origin + '/#p=' + siteNumId(b.dataset.id); try { await navigator.clipboard.writeText(u); toast('লিংক কপি হয়েছে ✅'); } catch (e) { prompt('লিংকটি কপি করুন:', u); } },
   cathide: b => catPatch(b.dataset.cat, { hidden: !catEnt(b.dataset.cat).hidden }),
   caticonrm: b => catPatch(b.dataset.cat, { icon: '' }),
