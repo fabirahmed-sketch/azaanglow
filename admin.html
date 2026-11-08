@@ -319,7 +319,7 @@ function vOrders() {
   const q = oSearch.toLowerCase(), list = D.orders.filter(o => (oFilter === 'all' || o.status === oFilter) && (!q || (o.orderNo + o.name + o.phone).toLowerCase().includes(q)));
   return `<div class="flex gap-2 overflow-x-auto mb-3 text-sm">${[['all', 'সব'], ...Object.entries(ST).map(([k, v]) => [k, v[0]])].map(([k, n]) => `<button data-act="ofilter" data-v="${k}" class="tab shrink-0 px-3 py-1.5 rounded-full border bg-white ${oFilter === k ? 'on' : ''}">${n}</button>`).join('')}</div>
   <input class="inp mb-3" placeholder="অর্ডার নম্বর / নাম / ফোন দিয়ে খুঁজুন…" value="${esc(oSearch)}" data-in="osearch">
-  <div class="space-y-2">${list.map(o => `<button data-act="order" data-id="${o.id}" class="card w-full p-3 text-left flex flex-wrap justify-between gap-2 items-center"><span><b>${esc(o.orderNo)}</b> · ${esc(o.name)}<br><span class="text-xs text-black/60">${esc(o.phone)} · ${dt(o.createdAt)}</span></span><span class="text-right"><b>${tk(o.total)}</b><br>${badge(o.status)}</span></button>`).join('') || '<p class="text-sm text-black/50">কোনো অর্ডার পাওয়া যায়নি</p>'}</div>`;
+  <div class="space-y-2">${list.map(o => `<div class="card w-full p-3 flex flex-wrap justify-between gap-2 items-center"><button data-act="order" data-id="${o.id}" class="text-left flex-1 min-w-[10rem]"><span><b>${esc(o.orderNo)}</b> · ${esc(o.name)}<br><span class="text-xs text-black/60">${esc(o.phone)} · ${dt(o.createdAt)}</span></span></button><span class="text-right"><b>${tk(o.total)}</b><br>${badge(o.status)}<br><button class="btn2 !py-1 !px-2 text-xs mt-1" data-act="tgorder" data-id="${o.id}">টেলিগ্রামে আনুন</button>${o.tgAt ? '<br><span class="text-xs text-green-700">পাঠানো হয়েছে ✓</span>' : ''}</span></div>`).join('') || '<p class="text-sm text-black/50">কোনো অর্ডার পাওয়া যায়নি</p>'}</div>`;
 }
 function customers() {
   const m = {};
@@ -424,7 +424,7 @@ function orderModal(o) {
     ${o.discount ? `<div class="p-2 flex justify-between"><span>ছাড় ${o.promo ? '(' + esc(o.promo) + ')' : ''}</span><span>-${tk(o.discount)}</span></div>` : ''}<div class="p-2 flex justify-between font-bold"><span>মোট</span><span>${tk(o.total)}</span></div></div>
   <label class="block mt-3 text-sm font-semibold">স্ট্যাটাস<select id="oStatus" class="inp mt-1 font-normal">${Object.entries(ST).map(([k, v]) => `<option value="${k}" ${o.status === k ? 'selected' : ''}>${v[0]}</option>`).join('')}</select></label>
   <label class="block mt-2 text-sm font-semibold">এডমিন নোট<textarea id="oNote" rows="2" class="inp mt-1 font-normal">${esc(o.adminNote)}</textarea></label>
-  <div class="flex flex-wrap gap-2 mt-4"><button class="btn" data-act="osave" data-id="${o.id}">সেভ</button><button class="btn2" data-act="invoice" data-id="${o.id}">🖨 ইনভয়েস</button><a class="btn2" target="_blank" href="https://wa.me/${waNum(o.phone)}">WhatsApp</a><a class="btn2" href="tel:${esc(o.phone)}">কল</a><button class="btn2 red" data-act="odel" data-id="${o.id}">ডিলিট</button><button class="btn2 ml-auto" data-act="close">বন্ধ</button></div>`);
+  <div class="flex flex-wrap gap-2 mt-4"><button class="btn" data-act="osave" data-id="${o.id}">সেভ</button><button class="btn2" data-act="invoice" data-id="${o.id}">🖨 ইনভয়েস</button><button class="btn2" data-act="tgorder" data-id="${o.id}">টেলিগ্রামে আনুন</button><a class="btn2" target="_blank" href="https://wa.me/${waNum(o.phone)}">WhatsApp</a><a class="btn2" href="tel:${esc(o.phone)}">কল</a><button class="btn2 red" data-act="odel" data-id="${o.id}">ডিলিট</button><button class="btn2 ml-auto" data-act="close">বন্ধ</button></div>`);
 }
 function invoice(o) {
   const w = window.open('', '_blank'), s = D.settings;
@@ -678,6 +678,39 @@ async function migrateExternal() {
 }
 
 /* ---------- Actions ---------- */
+/* ---------- টেলিগ্রামে অর্ডার (ম্যানুয়াল) ---------- */
+const TG = { botToken: '9066487623:AAGg0IzDGYd5r-5fLWg4l6Vx6sCTMBWJ5hc', chatId: '7971315503' };
+const tgTime = o => { try { return (o.createdAt?.toDate ? o.createdAt.toDate() : new Date()).toLocaleString('bn-BD', { timeZone: 'Asia/Dhaka', dateStyle: 'medium', timeStyle: 'short' }); } catch (e) { return ''; } };
+// টেলিগ্রামের লেখা: কোনো ইমোজি/স্টিকার ছাড়া, শুধু লেখা
+function tgOrderText(o, lim) {
+  const L = ['নতুন অর্ডার — ' + o.orderNo, '', 'নাম: ' + o.name, 'মোবাইল: ' + o.phone, 'জেলা: ' + (o.area || ''), 'ঠিকানা: ' + o.address, '', 'অর্ডারের পণ্য:'];
+  (o.items || []).forEach((l, i) => { const n = String(l.name || ''), nm = lim && n.length > lim ? n.slice(0, lim - 1) + '…' : n; L.push(`${i + 1}) ${nm}${l.variant ? ` [সাইজ: ${l.variant}]` : ''}${l.shade ? ` [শেড: ${l.shade}]` : ''} — ${l.qty} পিস × ${l.price}৳ = ${l.price * l.qty}৳`); });
+  L.push('', `পণ্যের মূল্য: ${o.subtotal}৳`);
+  if (o.discount > 0) L.push(`প্রমো ছাড় (${o.promo}): -${o.discount}৳`);
+  L.push(`ডেলিভারি চার্জ: ${o.delivery === 0 ? 'ফ্রি' : o.delivery + '৳'}`, `সর্বমোট বিল: ${o.total}৳`, 'পেমেন্ট: ক্যাশ অন ডেলিভারি', 'সময়: ' + tgTime(o));
+  return L.join('\n');
+}
+const tgApi = async (method, params) => {
+  const r = await fetch(`https://api.telegram.org/bot${TG.botToken}/${method}`, { method: 'POST', body: new URLSearchParams(params) });
+  const d = await r.json().catch(() => ({}));
+  if (!d.ok) throw new Error(d.description || ('HTTP ' + r.status));
+  return d;
+};
+// ছবিসহ একটা বার্তা (ক্যাপশনে অর্ডারের লেখা); ছবি না গেলে শুধু লেখা পাঠায়
+async function tgSendOrder(o) {
+  const fit = () => { for (const lim of [0, 45, 32, 24, 16]) { const t = tgOrderText(o, lim); if (t.length <= 1000) return t; } return tgOrderText(o, 16).slice(0, 990) + '…'; };
+  const photos = [...new Set((o.items || []).map(l => l.image).filter(u => /^https?:\/\//i.test(u)))].slice(0, 10);
+  if (photos.length) {
+    try {
+      const cap = fit();
+      if (photos.length === 1) await tgApi('sendPhoto', { chat_id: TG.chatId, photo: photos[0], caption: cap });
+      else await tgApi('sendMediaGroup', { chat_id: TG.chatId, media: JSON.stringify(photos.map((u, i) => i ? { type: 'photo', media: u } : { type: 'photo', media: u, caption: cap })) });
+      return 'photo';
+    } catch (e) { console.warn('Telegram photo failed:', e); }
+  }
+  await tgApi('sendMessage', { chat_id: TG.chatId, text: tgOrderText(o) + (photos.length ? '\n\n(ছবি পাঠানো যায়নি)' : '') });
+  return 'text';
+}
 const A = {
   tab: b => { tab = b.dataset.v; render(); },
   close: closeModal,
@@ -785,6 +818,17 @@ const A = {
   migext: migrateExternal,
   impgo: impRun,
   impsample: impSample,
+  tgorder: async b => {
+    const o = D.orders.find(x => x.id === b.dataset.id); if (!o) return;
+    if (o.tgAt && !confirm('এই অর্ডার আগে একবার টেলিগ্রামে পাঠানো হয়েছে। আবার পাঠাবেন?')) return;
+    const old = b.textContent; b.disabled = true; b.textContent = 'পাঠানো হচ্ছে…';
+    try {
+      const how = await tgSendOrder(o);
+      toast(how === 'photo' ? 'টেলিগ্রামে পাঠানো হয়েছে ✅' : 'টেলিগ্রামে পাঠানো হয়েছে (শুধু লেখা, ছবি যায়নি)');
+      updateDoc(doc(db, 'orders', o.id), { tgAt: serverTimestamp() }).catch(() => {});
+    } catch (e) { toast('টেলিগ্রামে যায়নি: ' + (e.message || e)); }
+    finally { b.disabled = false; b.textContent = old; }
+  },
   order: b => orderModal(D.orders.find(o => o.id === b.dataset.id)),
   ofilter: b => { oFilter = b.dataset.v; render(); },
   custorders: b => { oSearch = b.dataset.v; oFilter = 'all'; tab = 'orders'; render(); },
