@@ -460,7 +460,7 @@ function vImport() {
 3) { "categories": [ { "category": "Lip", "products": [ ... ] } ] }
 
 বাদ দিতে: একই ফরম্যাটে ফাইল দিন ("id" বা "name" মিললে ডিলিট হবে)।
-প্রোডাক্টের ঘর: name*, offer*, regular, stock, desc, brand, images[], active, sections[], bestSeller</pre></details></div>`;
+প্রোডাক্টের ঘর: name*, offer*, regular, stock, desc, brand, images[], active, sections[], bestSeller, shades[] (যেমন "01 Ivory | #F3D9C4" বা {"name":"01 Ivory","color":"#F3D9C4"}), variants[] ({"name":"100 ml","offer":450,"regular":550,"img":2})</pre></details></div>`;
 }
 function impParse(raw) {
   const out = [];
@@ -504,13 +504,13 @@ const impData = it => {
     const offer = +p.offer || 0, cat = it.cats.size ? [...it.cats][0] : String(p.cat ?? p.category ?? '').trim();
     Object.assign(d, { name: it.name, cat, brand: canonBrand(p.brand) || detectBrand(it.name), regular: +p.regular || offer, offer, stock: has('stock') ? +p.stock || 0 : 50, desc: String(p.desc ?? p.description ?? '').trim(), active: p.active !== false, images: imgs });
     d.featCats = cats.length ? cats : (cat ? [cat] : []);
-    if (Array.isArray(p.variants)) { d.variants = cleanVariants(p.variants); if (d.variants.length) { const m = d.variants.reduce((a, b) => b.offer < a.offer ? b : a); d.offer = m.offer; d.regular = m.regular; } }
+    if (Array.isArray(p.variants)) { d.variants = cleanVariants(p.variants); if (d.variants.length) { const m = d.variants.reduce((a, b) => b.offer < a.offer ? b : a); d.offer = m.offer; d.regular = m.regular; } } if (Array.isArray(p.shades)) { const sh = cleanShades(p.shades); if (sh.length) d.shades = sh; }
     Object.assign(d, secFields(Array.isArray(p.sections) ? p.sections : p.bestSeller ? ['best'] : (p.group === 'sandalwood' || p.group === 'bamboo') ? [p.group] : []));
     return d;
   }
   if (it.name && it.name !== ex.name && has('name')) d.name = it.name;
   if (has('brand')) d.brand = canonBrand(p.brand);
-  if (Array.isArray(p.variants)) { d.variants = cleanVariants(p.variants); if (d.variants.length) { const m = d.variants.reduce((a, b) => b.offer < a.offer ? b : a); d.offer = m.offer; d.regular = m.regular; } }
+  if (Array.isArray(p.variants)) { d.variants = cleanVariants(p.variants); if (d.variants.length) { const m = d.variants.reduce((a, b) => b.offer < a.offer ? b : a); d.offer = m.offer; d.regular = m.regular; } } if (Array.isArray(p.shades)) { const sh = cleanShades(p.shades); if (sh.length) d.shades = sh; }
   if (has('offer')) d.offer = +p.offer || 0;
   if (has('regular')) d.regular = +p.regular || 0;
   if (has('stock')) d.stock = +p.stock || 0;
@@ -571,6 +571,7 @@ const CHUNK_BYTES = 700000;
 const setSync = m => { syncMsg = m; const el = $('#syncStat'); if (el) el.textContent = m; };
 const sha = async t => { try { const b = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(t)); return [...new Uint8Array(b)].map(x => x.toString(16).padStart(2, '0')).join('').slice(0, 24); } catch { let h = 5381; for (let i = 0; i < t.length; i++) h = ((h << 5) + h + t.charCodeAt(i)) | 0; return 'd' + (h >>> 0).toString(16) + t.length; } };
 const isData = x => String(x).startsWith('data:');
+const cleanShades = a => (Array.isArray(a) ? a : []).map(s => { if (typeof s === 'string') { const [n, c] = s.split('|').map(x => x.trim()); return { name: n || '', color: /^#[0-9a-f]{3,8}$/i.test(c || '') ? c : '' }; } return { name: String(s?.name ?? '').trim(), color: /^#[0-9a-f]{3,8}$/i.test(String(s?.color ?? '')) ? String(s.color) : '' }; }).filter(x => x.name).slice(0, 40);
 const cleanVariants = a => (Array.isArray(a) ? a : []).map(v => { const offer = +String(v?.offer ?? '').replace(/[^0-9.]/g, '') || 0, regular = +String(v?.regular ?? '').replace(/[^0-9.]/g, '') || offer; const im = Math.floor(+v?.img || 0); return { name: String(v?.name ?? '').trim(), offer, regular: Math.max(regular, offer), ...(im > 0 && im <= 15 ? { img: im } : {}) }; }).filter(v => v.name && v.offer > 0).slice(0, 30);
 function buildCatalog() {
   return D.products.filter(p => p.active !== false && p.name && +p.offer > 0 && (+p.stock || 0) > 0)
