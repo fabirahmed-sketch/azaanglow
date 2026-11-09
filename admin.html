@@ -300,6 +300,7 @@ function catalogCsv() {
 }
 function vProducts(onlyList) {
   const q = pSearch.toLowerCase(), list = D.products.filter(p => !q || (p.name + p.cat).toLowerCase().includes(q)).sort((a, b) => (a.name || '').localeCompare(b.name || ''));
+  const rvCount = {}; D.reviews.forEach(r => { if (r.pid) rvCount[r.pid] = (rvCount[r.pid] || 0) + 1; });
   const cards = list.map(p => `<div class="card overflow-hidden ${p.active === false ? 'opacity-50' : ''}">
     <img src="${esc(p.images?.[0] || '')}" class="w-full aspect-[4/5] object-cover bg-gray-100" alt="" loading="lazy" decoding="async">
     <div class="p-3 text-sm"><p class="font-semibold leading-snug min-h-[2.6rem]">${esc(p.name)}</p>
@@ -307,7 +308,7 @@ function vProducts(onlyList) {
     <p class="mt-1"><b>${tk(p.offer)}</b> <s class="text-black/40">${tk(p.regular)}</s></p>
     <p class="text-xs ${+p.stock <= 5 ? 'red font-bold' : 'text-black/60'}">স্টক: ${bn(+p.stock || 0)}${p.active === false ? ' · লুকানো' : ''}</p>
     <p class="text-xs mt-0.5 text-black/60">${secOf(p).length ? 'সেকশন: ' + SECTIONS.filter(s => secOf(p).includes(s[0])).map(s => s[2]).join(' · ') : 'সেকশন: নেই (More Products এ দেখাবে)'}</p>
-    <div class="flex gap-2 mt-2"><button class="btn2 flex-1" data-act="pedit" data-id="${p.id}">এডিট</button><button class="btn2" data-act="plink" data-id="${p.id}" aria-label="প্রোডাক্টের লিংক কপি">🔗</button><button class="btn2 red" data-act="pdel" data-id="${p.id}">✕</button></div></div></div>`).join('');
+    <div class="flex gap-2 mt-2"><button class="btn2 flex-1" data-act="pedit" data-id="${p.id}">এডিট</button><button class="btn2" data-act="rvnewp" data-id="${p.id}" aria-label="এই প্রোডাক্টে রিভিউ যোগ করুন">⭐ ${bn(rvCount[p.id] || 0)}</button><button class="btn2" data-act="plink" data-id="${p.id}" aria-label="প্রোডাক্টের লিংক কপি">🔗</button><button class="btn2 red" data-act="pdel" data-id="${p.id}">✕</button></div></div></div>`).join('');
   if (onlyList) return cards;
   return `<div class="flex gap-2 mb-3"><input class="inp" placeholder="প্রোডাক্ট খুঁজুন…" value="${esc(pSearch)}" data-in="psearch"><button class="btn shrink-0" data-act="pnew">+ নতুন</button></div>
   <div class="card p-4 mb-3 text-sm"><p class="font-semibold">📒 Meta (Facebook) ক্যাটালগ CSV</p>
@@ -687,33 +688,60 @@ async function migrateExternal() {
 /* ---------- Actions ---------- */
 
 /* ---------- রিভিউ (কাস্টমারের পাঠানো + নিজে ছবিসহ যোগ) ---------- */
-let rvFilter = 'all', rvImgs = [];
+let rvFilter = 'all', rvImgs = [], rvPick = null, rvFQ = '', rvEditId = null;
 const RVST = { pending: ['অনুমোদনের অপেক্ষায়', 'bg-yellow-100 text-yellow-800'], approved: ['সাইটে দেখাচ্ছে', 'bg-green-100 text-green-800'], hidden: ['লুকানো', 'bg-gray-200 text-gray-700'] };
 function vReviews() {
-  const all = D.reviews, list = all.filter(r => rvFilter === 'all' || r.status === rvFilter);
+  const all = D.reviews, fq = rvFQ.trim().toLowerCase().split(/\s+/).filter(Boolean);
+  const list = all.filter(r => (rvFilter === 'all' || r.status === rvFilter) && (!fq.length || fq.every(t => ((r.pname || '') + ' ' + (r.name || '') + ' ' + (r.text || '') + (r.pid ? '' : ' প্রোডাক্ট-ছাড়া')).toLowerCase().includes(t))));
   const cnt = k => k === 'all' ? all.length : all.filter(r => r.status === k).length;
   return `<div class="flex flex-wrap gap-2 items-center mb-3 text-sm"><button class="btn" data-act="rvnew">➕ রিভিউ যোগ করুন (ছবিসহ)</button>
     ${[['all', 'সব'], ['pending', 'অপেক্ষায়'], ['approved', 'দেখাচ্ছে'], ['hidden', 'লুকানো']].map(([k, n]) => `<button data-act="rvfilter" data-v="${k}" class="tab shrink-0 px-3 py-1.5 rounded-full border bg-white ${rvFilter === k ? 'on' : ''}">${n} (${bn(cnt(k))})</button>`).join('')}</div>
+  <input class="inp mb-2" data-in="rvfq" placeholder="🔍 প্রোডাক্টের নাম / কাস্টমারের নাম দিয়ে রিভিউ খুঁজুন…" value="${esc(rvFQ)}" autocomplete="off">
   <p class="text-xs text-black/55 mb-3">কাস্টমারের রিভিউ "অপেক্ষায়" থাকে — অনুমোদন দিলে তবেই সাইটে দেখায়। নিজে যোগ করলে সাথে সাথে দেখায়।</p>
   <div class="space-y-3">${list.map(r => `<div class="card p-3">
     <div class="flex flex-wrap items-center gap-2 text-sm"><b>${esc(r.name)}</b><span class="px-2 py-0.5 rounded-full text-xs font-bold ${RVST[r.status]?.[1] || ''}">${RVST[r.status]?.[0] || esc(r.status)}</span><span class="text-xs text-black/50">${r.source === 'admin' ? 'এডমিন যোগ করেছে' : 'কাস্টমার'} · ${dt(r.createdAt)}</span>${r.status === 'approved' && r.home === false ? '<span class="text-xs text-black/50">· হোমে নেই</span>' : ''}</div>
-    ${r.pname ? `<p class="text-xs text-black/60 mt-1">পণ্য: ${esc(r.pname)}</p>` : ''}
+    ${r.pid ? `<p class="text-xs text-black/70 mt-1">📦 পণ্য: <b>${esc(r.pname)}</b></p>` : `<p class="text-xs mt-1 ${r.pname ? 'red font-bold' : 'text-black/50'}">${r.pname ? '⚠ পণ্য সংযুক্ত নেই (' + esc(r.pname) + ') — নিচের "পণ্য বদলান" চাপুন' : 'কোনো পণ্য নির্দিষ্ট করা নেই (সাধারণ রিভিউ)'}</p>`}
     ${r.text ? `<p class="text-sm mt-2 whitespace-pre-line break-words">${esc(r.text)}</p>` : ''}
     ${(r.images || []).length ? `<div class="flex gap-2 mt-2 flex-wrap">${r.images.map(u => `<a href="${esc(u)}" target="_blank"><img src="${esc(u)}" class="w-20 h-20 object-cover rounded-lg border"></a>`).join('')}</div>` : ''}
     <div class="flex flex-wrap gap-2 mt-3">
       ${r.status !== 'approved' ? `<button class="btn2 !py-1 !px-3 text-xs" data-act="rvset" data-st="approved" data-id="${r.id}">✅ অনুমোদন</button>` : `<button class="btn2 !py-1 !px-3 text-xs" data-act="rvset" data-st="hidden" data-id="${r.id}">🙈 লুকান</button>`}
       ${r.status === 'approved' ? `<button class="btn2 !py-1 !px-3 text-xs" data-act="rvhome" data-id="${r.id}">${r.home === false ? '🏠 হোমে দেখান' : '🏠 হোম থেকে সরান'}</button>` : ''}
+      <button class="btn2 !py-1 !px-3 text-xs" data-act="rvedit" data-id="${r.id}">📦 পণ্য বদলান</button>
       <button class="btn2 red !py-1 !px-3 text-xs" data-act="rvdel" data-id="${r.id}">ডিলিট</button></div></div>`).join('') || '<p class="text-sm text-black/50">কোনো রিভিউ নেই</p>'}</div>`;
 }
-function rvModal() {
+const rvPickerHtml = () => `<div class="mt-3"><p class="text-sm font-semibold">কোন প্রোডাক্টের রিভিউ?</p>
+  <div id="rvaChip" class="mt-1"></div>
+  <input id="rvaPq" data-in="rvpq" class="inp mt-1 font-normal" placeholder="🔍 প্রোডাক্টের নাম বা ব্র্যান্ড লিখে খুঁজুন…" autocomplete="off">
+  <div id="rvaRes" class="max-h-52 overflow-y-auto border rounded-lg mt-1 bg-white"></div></div>`;
+const drawRvChip = () => { const c = $('#rvaChip'); if (!c) return; c.innerHTML = rvPick ? `<div class="flex items-center gap-2 p-2 rounded-lg bg-green-50 border border-green-200 text-sm"><img src="${esc(rvPick.img || '')}" class="w-10 h-10 object-cover rounded bg-gray-100" alt=""><b class="flex-1 leading-snug">${esc(rvPick.name)}</b><button class="btn2 !py-1 !px-2 text-xs" data-act="rvunpick">বদলান</button></div>` : '<p class="text-xs red font-bold">এখনো কোনো প্রোডাক্ট বাছা হয়নি — নিচে খুঁজে একটা বেছে নিন</p>'; };
+const drawRvRes = () => {
+  const box = $('#rvaRes'); if (!box) return;
+  const toks = ($('#rvaPq')?.value || '').trim().toLowerCase().split(/\s+/).filter(Boolean);
+  const m = D.products.filter(p => toks.every(t => ((p.name || '') + ' ' + (p.brand || '')).toLowerCase().includes(t))).sort((a, b) => (a.name || '').localeCompare(b.name || ''));
+  box.innerHTML = (m.slice(0, 40).map(p => `<button type="button" data-act="rvpick" data-id="${p.id}" class="w-full flex items-center gap-2 p-2 border-b text-left text-sm hover:bg-black/5 ${rvPick?.id === p.id ? 'bg-green-50' : ''}"><img src="${esc(p.images?.[0] || '')}" class="w-9 h-9 object-cover rounded bg-gray-100 shrink-0" alt="" loading="lazy"><span class="flex-1 leading-snug">${esc(p.name)}</span><span class="text-xs text-black/50 shrink-0">${tk(p.offer)}</span></button>`).join('') || '<p class="p-3 text-sm text-black/50">কোনো প্রোডাক্ট পাওয়া যায়নি</p>') + (m.length > 40 ? `<p class="p-2 text-xs text-black/50">আরও ${bn(m.length - 40)}টি আছে — নাম আরেকটু লিখে ছোট করুন</p>` : '');
+};
+function rvModal(pid) {
+  const p = pid ? D.products.find(x => x.id === pid) : null;
+  rvPick = p ? { id: p.id, name: p.name, img: p.images?.[0] || '' } : null; rvImgs = [];
   openModal(`<div class="flex justify-between items-start"><h2 class="font-bold text-lg">রিভিউ যোগ করুন</h2><button class="btn2 !py-1 !px-3" data-act="close">✕</button></div>
   <label class="block mt-3 text-sm font-semibold">কাস্টমারের নাম<input id="rvaName" class="inp mt-1 font-normal" maxlength="60"></label>
-  <label class="block mt-2 text-sm font-semibold">পণ্য (ঐচ্ছিক)<input id="rvaProd" list="rvaProds" class="inp mt-1 font-normal" placeholder="পণ্যের নাম লিখুন বা বেছে নিন"><datalist id="rvaProds">${D.products.map(p => `<option value="${esc(p.name)}">`).join('')}</datalist></label>
-  <label class="block mt-2 text-sm font-semibold">রিভিউ লেখা<textarea id="rvaText" rows="4" class="inp mt-1 font-normal" maxlength="1200"></textarea></label>
+  ${rvPickerHtml()}
+  <label class="flex items-center gap-2 mt-2 text-xs text-black/70"><input type="checkbox" id="rvaNoProd"> প্রোডাক্ট ছাড়া সাধারণ রিভিউ (শুধু হোমপেজের জন্য)</label>
+  <label class="block mt-3 text-sm font-semibold">রিভিউ লেখা<textarea id="rvaText" rows="4" class="inp mt-1 font-normal" maxlength="1200"></textarea></label>
   <div class="mt-2"><p class="text-sm font-semibold">ছবি (সর্বোচ্চ ৫টি)</p><div id="rvaImgs" class="flex gap-2 flex-wrap mt-1"></div><input type="file" accept="image/*" multiple data-in="rvimgs" class="mt-2 text-sm"></div>
   <label class="flex items-center gap-2 mt-3 text-sm"><input type="checkbox" id="rvaHome" checked> হোমপেজের রিভিউ সেকশনেও দেখান</label>
-  <div class="flex gap-2 mt-4"><button class="btn" data-act="rvsave">সেভ করুন</button><button class="btn2 ml-auto" data-act="close">বন্ধ</button></div>`);
-  rvImgs = []; drawRvImgs();
+  <div class="flex flex-wrap gap-2 mt-4"><button class="btn" data-act="rvsave">সেভ করুন</button><button class="btn2" data-act="rvsave2">সেভ করে এই প্রোডাক্টে আরেকটা</button><button class="btn2 ml-auto" data-act="close">বন্ধ</button></div>`);
+  drawRvChip(); drawRvRes(); drawRvImgs();
+}
+function rvEditModal(id) {
+  const r = D.reviews.find(x => x.id === id); if (!r) return;
+  const p = r.pid ? D.products.find(x => x.id === r.pid) : null;
+  rvEditId = id; rvPick = p ? { id: p.id, name: p.name, img: p.images?.[0] || '' } : null;
+  openModal(`<div class="flex justify-between items-start"><h2 class="font-bold text-lg">রিভিউয়ের পণ্য বদলান</h2><button class="btn2 !py-1 !px-3" data-act="close">✕</button></div>
+  <p class="text-sm mt-2 p-2 rounded-lg bg-black/5 whitespace-pre-line break-words"><b>${esc(r.name)}</b>: ${esc((r.text || '').slice(0, 160))}</p>
+  ${rvPickerHtml()}
+  <div class="flex flex-wrap gap-2 mt-4"><button class="btn" data-act="rvpsave">সেভ করুন</button><button class="btn2" data-act="rvpclear">প্রোডাক্ট সরিয়ে দিন</button><button class="btn2 ml-auto" data-act="close">বন্ধ</button></div>`);
+  drawRvChip(); drawRvRes();
 }
 const drawRvImgs = () => { const b = $('#rvaImgs'); if (b) b.innerHTML = rvImgs.map((u, i) => `<div class="relative"><img src="${esc(u)}" class="w-16 h-16 object-cover rounded-lg border"><button data-act="rvrmimg" data-i="${i}" class="absolute -top-2 -right-2 w-5 h-5 rounded-full bg-black text-white text-xs">✕</button></div>`).join(''); };
 
@@ -859,17 +887,25 @@ const A = {
   migext: migrateExternal,
   impgo: impRun,
   impsample: impSample,
-  rvfilter: b => { rvFilter = b.dataset.v; render(); },
   rvnew: () => rvModal(),
-  rvrmimg: b => { rvImgs.splice(+b.dataset.i, 1); drawRvImgs(); },
-  rvsave: async b => {
-    const name = $('#rvaName').value.trim(), text = $('#rvaText').value.trim(), pn = $('#rvaProd').value.trim();
-    if (!name) return toast('কাস্টমারের নাম লিখুন'); if (!text && !rvImgs.length) return toast('রিভিউ লিখুন বা ছবি দিন');
-    const p = pn ? D.products.find(x => x.name.toLowerCase() === pn.toLowerCase()) : null;
+  rvnewp: b => rvModal(b.dataset.id),
+  rvpick: b => { const p = D.products.find(x => x.id === b.dataset.id); if (!p) return; rvPick = { id: p.id, name: p.name, img: p.images?.[0] || '' }; const nb = $('#rvaNoProd'); if (nb) nb.checked = false; drawRvChip(); drawRvRes(); },
+  rvunpick: () => { rvPick = null; drawRvChip(); drawRvRes(); const i = $('#rvaPq'); if (i) i.focus(); },
+  rvedit: b => rvEditModal(b.dataset.id),
+  rvpsave: async b => {
+    if (!rvPick) return toast('আগে একটা প্রোডাক্ট বেছে নিন');
     b.disabled = true;
-    try { await addDoc(collection(db, 'reviews'), { name, text, images: rvImgs, pid: p ? p.id : '', pname: p ? p.name : pn, status: 'approved', home: $('#rvaHome').checked, source: 'admin', createdAt: serverTimestamp() }); closeModal(); toast('রিভিউ যোগ হয়েছে ✅'); }
-    catch (e) { b.disabled = false; toast('সেভ হয়নি: ' + (e.code || e.message)); }
+    try { await updateDoc(doc(db, 'reviews', rvEditId), { pid: rvPick.id, pname: rvPick.name }); closeModal(); toast('পণ্য বদলানো হয়েছে ✅'); }
+    catch (e) { b.disabled = false; toast('হয়নি: ' + (e.code || e.message)); }
   },
+  rvpclear: async b => {
+    if (!confirm('এই রিভিউ থেকে প্রোডাক্ট সরিয়ে সাধারণ রিভিউ করবেন?')) return;
+    try { await updateDoc(doc(db, 'reviews', rvEditId), { pid: '', pname: '' }); closeModal(); toast('প্রোডাক্ট সরানো হয়েছে'); } catch (e) { toast('হয়নি: ' + (e.code || e.message)); }
+  },
+  rvfilter: b => { rvFilter = b.dataset.v; render(); },
+  rvrmimg: b => { rvImgs.splice(+b.dataset.i, 1); drawRvImgs(); },
+  rvsave: b => rvSave(b, false),
+  rvsave2: b => rvSave(b, true),
   rvset: async b => { try { await updateDoc(doc(db, 'reviews', b.dataset.id), b.dataset.st === 'approved' ? { status: 'approved', home: true, approvedAt: serverTimestamp() } : { status: b.dataset.st }); toast(b.dataset.st === 'approved' ? 'অনুমোদন হয়েছে ✅' : 'লুকানো হয়েছে'); } catch (e) { toast('হয়নি: ' + (e.code || e.message)); } },
   rvhome: async b => { const r = D.reviews.find(x => x.id === b.dataset.id); if (r) try { await updateDoc(doc(db, 'reviews', r.id), { home: r.home === false }); } catch (e) { toast('হয়নি: ' + (e.code || e.message)); } },
   rvdel: async b => { if (confirm('রিভিউটি ডিলিট করবেন?')) try { await deleteDoc(doc(db, 'reviews', b.dataset.id)); toast('ডিলিট হয়েছে'); } catch (e) { toast('হয়নি: ' + (e.code || e.message)); } },
@@ -918,6 +954,24 @@ const A = {
   },
   passchg: async () => { const p = $('#newPass').value; if (p.length < 8) return toast('কমপক্ষে ৮ অক্ষর দিন'); try { await updatePassword(auth.currentUser, p); toast('পাসওয়ার্ড বদলেছে ✅'); $('#newPass').value = ''; } catch { toast('লগআউট করে আবার লগইন করে চেষ্টা করুন'); } }
 };
+async function rvSave(b, again) {
+  const name = $('#rvaName').value.trim(), text = $('#rvaText').value.trim(), noProd = $('#rvaNoProd')?.checked;
+  if (!name) return toast('কাস্টমারের নাম লিখুন');
+  if (!text && !rvImgs.length) return toast('রিভিউ লিখুন বা ছবি দিন');
+  if (!rvPick && !noProd) return toast('কোন প্রোডাক্টের রিভিউ — আগে একটা প্রোডাক্ট বেছে নিন');
+  const btns = [...document.querySelectorAll('[data-act=rvsave],[data-act=rvsave2]')]; btns.forEach(x => x.disabled = true);
+  try {
+    await addDoc(collection(db, 'reviews'), { name, text, images: rvImgs, pid: noProd ? '' : rvPick.id, pname: noProd ? '' : rvPick.name, status: 'approved', home: $('#rvaHome').checked, source: 'admin', createdAt: serverTimestamp() });
+    toast('রিভিউ যোগ হয়েছে ✅');
+    if (again && rvPick && !noProd) { $('#rvaName').value = ''; $('#rvaText').value = ''; rvImgs = []; drawRvImgs(); btns.forEach(x => x.disabled = false); $('#rvaName').focus(); }
+    else closeModal();
+  } catch (e) { btns.forEach(x => x.disabled = false); toast('সেভ হয়নি: ' + (e.code || e.message)); }
+}
+document.addEventListener('input', e => {
+  const k = e.target.dataset.in;
+  if (k === 'rvpq') drawRvRes();
+  if (k === 'rvfq') { rvFQ = e.target.value; deb('rvf', () => { const n0 = $('[data-in=rvfq]'), p = n0 ? n0.selectionStart : 0; render(); const n = $('[data-in=rvfq]'); if (n) { n.focus(); n.setSelectionRange(p, p); } }); }
+});
 document.addEventListener('click', e => { const b = e.target.closest('[data-act]'); if (b && A[b.dataset.act]) A[b.dataset.act](b); });
 const setOffPath = e => {
   const p = e.target.dataset.off; if (!p) return;
