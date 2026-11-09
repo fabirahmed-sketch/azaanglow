@@ -56,9 +56,9 @@ const dt = t => t?.toDate ? t.toDate().toLocaleString('bn-BD', {dateStyle:'mediu
 const toast = (m, ms = 2500) => { const t = $('#toast'); t.textContent = m; t.classList.remove('hidden'); clearTimeout(toast.t); toast.t = setTimeout(() => t.classList.add('hidden'), ms); };
 const ST = { pending:['পেন্ডিং','bg-yellow-100 text-yellow-800'], confirmed:['কনফার্ম','bg-blue-100 text-blue-800'], shipped:['শিপড','bg-purple-100 text-purple-800'], delivered:['ডেলিভারড','bg-green-100 text-green-800'], cancelled:['ক্যান্সেল','bg-red-100 text-red-800'] };
 const badge = s => `<span class="px-2 py-0.5 rounded-full text-xs font-bold ${ST[s]?.[1] || ''}">${ST[s]?.[0] || s}</span>`;
-const TABS = [['dash','ড্যাশবোর্ড'],['products','প্রোডাক্ট'],['sections','ফিচারড সেকশন ও ক্যাটাগরি'],['home','হোমপেজ সেকশন'],['brands','ব্র্যান্ড'],['orders','অর্ডার'],['customers','কাস্টমার'],['promos','প্রমো কোড'],['banners','ব্যানার'],['offers','অফার আইকন'],['popups','পপআপ এড'],['settings','সেটিংস']];
+const TABS = [['dash','ড্যাশবোর্ড'],['products','প্রোডাক্ট'],['sections','ফিচারড সেকশন ও ক্যাটাগরি'],['home','হোমপেজ সেকশন'],['brands','ব্র্যান্ড'],['orders','অর্ডার'],['reviews','রিভিউ'],['customers','কাস্টমার'],['promos','প্রমো কোড'],['banners','ব্যানার'],['offers','অফার আইকন'],['popups','পপআপ এড'],['settings','সেটিংস']];
 
-const D = { products:[], orders:[], promos:[], banners:[], settings:{} };
+const D = { products:[], orders:[], reviews:[], promos:[], banners:[], settings:{} };
 let tab = 'dash', oFilter = 'all', oSearch = '', pSearch = '', secQ = {}, autoBusy = false, form = {}, soundOn = false, firstLoad = {}, unsubs = [];
 
 /* ---------- Auth ---------- */
@@ -70,12 +70,13 @@ $('#loginForm').addEventListener('submit', async e => {
 onAuthStateChanged(auth, u => {
   $('#login').classList.toggle('hidden', !!u); $('#app').classList.toggle('hidden', !u);
   unsubs.forEach(f => f()); unsubs = []; firstLoad = {};
-  if (u) { listen('products'); listen('orders', 'createdAt'); listen('promos'); listen('banners'); listenSettings(); }
+  if (u) { listen('products'); listen('orders', 'createdAt'); listen('reviews', 'createdAt'); listen('promos'); listen('banners'); listenSettings(); }
 });
 function listen(name, ord) {
   const q = ord ? query(collection(db, name), orderBy(ord, 'desc')) : collection(db, name);
   unsubs.push(onSnapshot(q, s => {
     D[name] = s.docs.map(d => ({ ...d.data(), id: d.id }));
+    if (name === 'reviews' && firstLoad.reviews && s.docChanges().some(c => c.type === 'added' && c.doc.data().status === 'pending')) toast('📝 নতুন রিভিউ এসেছে (অনুমোদনের অপেক্ষায়)');
     if (name === 'orders' && firstLoad.orders && soundOn && s.docChanges().some(c => c.type === 'added')) { beep(); toast('🛒 নতুন অর্ডার এসেছে!'); }
     firstLoad[name] = true; if (name === 'products') { hadProducts ||= D.products.length > 0; schedSync(); } render(); autoBestRun();
   }, err => toast('ডাটা লোড হয়নি: ' + err.code)));
@@ -111,8 +112,8 @@ $('#modal').addEventListener('mousedown', e => { if (e.target.id === 'modal') cl
 
 /* ---------- Views ---------- */
 function render() {
-  $('#tabs').innerHTML = TABS.map(([k, n]) => `<button data-act="tab" data-v="${k}" class="tab shrink-0 px-3 py-1.5 rounded-full border bg-white ${tab === k ? 'on' : ''}">${n}${k === 'orders' && D.orders.filter(o => o.status === 'pending').length ? ` (${bn(D.orders.filter(o => o.status === 'pending').length)})` : ''}</button>`).join('');
-  $('#view').innerHTML = ({ dash: vDash, products: vProducts, sections: vSections, home: vHome, brands: vBrands, orders: vOrders, customers: vCustomers, promos: vPromos, banners: vBanners, offers: vOffers, popups: vPopups, settings: vSettings })[tab]();
+  $('#tabs').innerHTML = TABS.map(([k, n]) => `<button data-act="tab" data-v="${k}" class="tab shrink-0 px-3 py-1.5 rounded-full border bg-white ${tab === k ? 'on' : ''}">${n}${k === 'reviews' && D.reviews.filter(r => r.status === 'pending').length ? ` (${bn(D.reviews.filter(r => r.status === 'pending').length)})` : ''}${k === 'orders' && D.orders.filter(o => o.status === 'pending').length ? ` (${bn(D.orders.filter(o => o.status === 'pending').length)})` : ''}</button>`).join('');
+  $('#view').innerHTML = ({ dash: vDash, products: vProducts, sections: vSections, home: vHome, brands: vBrands, orders: vOrders, reviews: vReviews, customers: vCustomers, promos: vPromos, banners: vBanners, offers: vOffers, popups: vPopups, settings: vSettings })[tab]();
 }
 function vDash() {
   const today = new Date().toDateString(), live = D.orders.filter(o => o.status !== 'cancelled');
@@ -319,7 +320,7 @@ function vOrders() {
   const q = oSearch.toLowerCase(), list = D.orders.filter(o => (oFilter === 'all' || o.status === oFilter) && (!q || (o.orderNo + o.name + o.phone).toLowerCase().includes(q)));
   return `<div class="flex gap-2 overflow-x-auto mb-3 text-sm">${[['all', 'সব'], ...Object.entries(ST).map(([k, v]) => [k, v[0]])].map(([k, n]) => `<button data-act="ofilter" data-v="${k}" class="tab shrink-0 px-3 py-1.5 rounded-full border bg-white ${oFilter === k ? 'on' : ''}">${n}</button>`).join('')}</div>
   <input class="inp mb-3" placeholder="অর্ডার নম্বর / নাম / ফোন দিয়ে খুঁজুন…" value="${esc(oSearch)}" data-in="osearch">
-  <div class="space-y-2">${list.map(o => `<div class="card w-full p-3 flex flex-wrap justify-between gap-2 items-center"><button data-act="order" data-id="${o.id}" class="text-left flex-1 min-w-[10rem]"><span><b>${esc(o.orderNo)}</b> · ${esc(o.name)}<br><span class="text-xs text-black/60">${esc(o.phone)} · ${dt(o.createdAt)}</span></span></button><span class="text-right"><b>${tk(o.total)}</b><br>${badge(o.status)}<br><button class="btn2 !py-1 !px-2 text-xs mt-1" data-act="tgorder" data-id="${o.id}">টেলিগ্রামে আনুন</button>${o.tgAt ? '<br><span class="text-xs text-green-700">পাঠানো হয়েছে ✓</span>' : ''}</span></div>`).join('') || '<p class="text-sm text-black/50">কোনো অর্ডার পাওয়া যায়নি</p>'}</div>`;
+  <div class="space-y-2">${list.map(o => `<div class="card w-full p-3 flex flex-wrap justify-between gap-2 items-center"><button data-act="order" data-id="${o.id}" class="text-left flex-1 min-w-[10rem]"><span><b>${esc(o.orderNo)}</b> · ${esc(o.name)}<br><span class="text-xs text-black/60">${esc(o.phone)} · ${dt(o.createdAt)}</span></span></button><span class="text-right"><b>${tk(o.total)}</b><br>${badge(o.status)}<br><button class="btn2 !py-1 !px-2 text-xs mt-1" data-act="tgorder" data-id="${o.id}">টেলিগ্রামে আনুন</button>${o.tgAt ? '<br><span class="text-xs text-green-700">পাঠানো হয়েছে ✓</span>' : o.tgFail ? '<br><span class="text-xs text-red-600">⚠ টেলিগ্রামে যায়নি</span>' : ''}</span></div>`).join('') || '<p class="text-sm text-black/50">কোনো অর্ডার পাওয়া যায়নি</p>'}</div>`;
 }
 function customers() {
   const m = {};
@@ -397,7 +398,7 @@ function productForm(p) {
     <label class="text-sm font-semibold">অফার দাম (৳)<input id="fOff" type="number" class="inp mt-1 font-normal" value="${p?.offer ?? ''}"></label>
     <label class="text-sm font-semibold">স্টক<input id="fStock" type="number" class="inp mt-1 font-normal" value="${p?.stock ?? 50}"></label>
     <div class="text-sm pt-6"><label class="block"><input id="fActive" type="checkbox" ${p?.active === false ? '' : 'checked'}> সাইটে দেখান</label></div>
-    <label class="col-span-2 text-sm font-semibold">🎨 শেড (মেকআপ আইটেমের জন্য, ঐচ্ছিক) <span class="text-xs font-normal text-black/50">প্রতি লাইনে একটি শেড। রঙের কোড দিলে কাস্টমার রঙের গোল দাগ দেখবে। যেমন: <code>01 Ivory | #F3D9C4</code> — কোড না দিলেও চলবে</span><textarea id="fShades" rows="4" class="inp mt-1 font-normal" placeholder="01 Ivory | #F3D9C4&#10;02 Beige | #E3B98F&#10;03 Rose">${esc((p?.shades || []).map(x => x.name + (x.color ? ' | ' + x.color : '')).join('\n'))}</textarea></label>
+    <label class="col-span-2 text-sm font-semibold">🎨 শেড (মেকআপ আইটেমের জন্য, ঐচ্ছিক) <span class="text-xs font-normal text-black/50">প্রতি লাইনে একটি শেড: <code>নাম | রঙের কোড | ছবির নম্বর</code> — যেমন <code>01 Ivory | #F3D9C4 | 2</code>। রঙের কোড ও ছবির নম্বর ঐচ্ছিক (শুধু ছবি চাইলে <code>03 Rose | | 4</code>)। ছবির নম্বর মানে নিচের ছবিগুলোর ক্রম (১ = প্রথম ছবি); কাস্টমার শেড বাছলে সেই ছবি দেখাবে।</span><textarea id="fShades" rows="4" class="inp mt-1 font-normal" placeholder="01 Ivory | #F3D9C4&#10;02 Beige | #E3B98F&#10;03 Rose">${esc((p?.shades || []).map(x => x.name + (x.color ? ' | ' + x.color : (x.img ? ' | ' : '')) + (x.img ? ' | ' + x.img : '')).join('\n'))}</textarea></label>
     <label class="col-span-2 text-sm font-semibold">📏 ভ্যারিয়েন্ট (ml / সাইজ, আলাদা দামসহ) <span class="text-xs font-normal text-black/50">প্রতি লাইনে একটা: <code>নাম | দাম | আগের দাম | ছবির নম্বর</code> — যেমন <code>100 ml | 450 | 550 | 2</code>। আগের দাম ও ছবির নম্বর ঐচ্ছিক; ছবির নম্বর মানে নিচে যোগ করা ছবিগুলোর ক্রম (১ = প্রথম ছবি, ২ = দ্বিতীয়...)। ছবির নম্বর না দিলে মূল ছবিই দেখাবে। এখানে দিলে ওপরের দাম ঘরের বদলে এগুলোর কমটা "থেকে" দাম দেখাবে।</span><textarea id="fVariants" rows="4" class="inp mt-1 font-normal" placeholder="100 ml | 450 | 550 | 1&#10;150 ml | 650 | 750 | 2&#10;300 ml | 1100 | 1100 | 3">${esc((p?.variants || []).map(v => v.name + ' | ' + v.offer + (v.img ? ' | ' + (v.regular || v.offer) + ' | ' + v.img : (v.regular && v.regular != v.offer ? ' | ' + v.regular : ''))).join('\n'))}</textarea></label>
     <label class="col-span-2 text-sm font-semibold">বিবরণ<textarea id="fDesc" rows="3" class="inp mt-1 font-normal">${esc(p?.desc)}</textarea></label>
     <div class="col-span-2"><p class="text-sm font-semibold mb-1">ছবি (প্রথমটি মূল ছবি, সর্বোচ্চ ১৫টি)</p><div id="fImgs" class="flex gap-2 flex-wrap"></div><input type="file" accept="image/*" multiple data-in="pimgs" class="mt-2 text-sm"></div></div>
@@ -460,7 +461,7 @@ function vImport() {
 3) { "categories": [ { "category": "Lip", "products": [ ... ] } ] }
 
 বাদ দিতে: একই ফরম্যাটে ফাইল দিন ("id" বা "name" মিললে ডিলিট হবে)।
-প্রোডাক্টের ঘর: name*, offer*, regular, stock, desc, brand, images[], active, sections[], bestSeller, shades[] (যেমন "01 Ivory | #F3D9C4" বা {"name":"01 Ivory","color":"#F3D9C4"}), variants[] ({"name":"100 ml","offer":450,"regular":550,"img":2})</pre></details></div>`;
+প্রোডাক্টের ঘর: name*, offer*, regular, stock, desc, brand, images[], active, sections[], bestSeller, shades[] (যেমন "01 Ivory | #F3D9C4 | 2" বা {"name":"01 Ivory","color":"#F3D9C4","img":2} — img = ছবির ক্রম), variants[] ({"name":"100 ml","offer":450,"regular":550,"img":2})</pre></details></div>`;
 }
 function impParse(raw) {
   const out = [];
@@ -571,7 +572,12 @@ const CHUNK_BYTES = 700000;
 const setSync = m => { syncMsg = m; const el = $('#syncStat'); if (el) el.textContent = m; };
 const sha = async t => { try { const b = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(t)); return [...new Uint8Array(b)].map(x => x.toString(16).padStart(2, '0')).join('').slice(0, 24); } catch { let h = 5381; for (let i = 0; i < t.length; i++) h = ((h << 5) + h + t.charCodeAt(i)) | 0; return 'd' + (h >>> 0).toString(16) + t.length; } };
 const isData = x => String(x).startsWith('data:');
-const cleanShades = a => (Array.isArray(a) ? a : []).map(s => { if (typeof s === 'string') { const [n, c] = s.split('|').map(x => x.trim()); return { name: n || '', color: /^#[0-9a-f]{3,8}$/i.test(c || '') ? c : '' }; } return { name: String(s?.name ?? '').trim(), color: /^#[0-9a-f]{3,8}$/i.test(String(s?.color ?? '')) ? String(s.color) : '' }; }).filter(x => x.name).slice(0, 40);
+const cleanShades = a => (Array.isArray(a) ? a : []).map(s => {
+  let n, c = '', im = 0;
+  if (typeof s === 'string') { const t = s.split('|').map(x => x.trim()); n = t[0] || ''; t.slice(1).forEach(x => { if (/^#[0-9a-f]{3,8}$/i.test(x)) c = x; else if (/^\d{1,2}$/.test(x)) im = +x; }); }
+  else { n = String(s?.name ?? '').trim(); c = /^#[0-9a-f]{3,8}$/i.test(String(s?.color ?? '')) ? String(s.color) : ''; im = Math.floor(+s?.img || 0); }
+  return { name: n, color: c, ...(im > 0 && im <= 15 ? { img: im } : {}) };
+}).filter(x => x.name).slice(0, 40);
 const cleanVariants = a => (Array.isArray(a) ? a : []).map(v => { const offer = +String(v?.offer ?? '').replace(/[^0-9.]/g, '') || 0, regular = +String(v?.regular ?? '').replace(/[^0-9.]/g, '') || offer; const im = Math.floor(+v?.img || 0); return { name: String(v?.name ?? '').trim(), offer, regular: Math.max(regular, offer), ...(im > 0 && im <= 15 ? { img: im } : {}) }; }).filter(v => v.name && v.offer > 0).slice(0, 30);
 function buildCatalog() {
   return D.products.filter(p => p.active !== false && p.name && +p.offer > 0 && (+p.stock || 0) > 0)
@@ -679,6 +685,38 @@ async function migrateExternal() {
 }
 
 /* ---------- Actions ---------- */
+
+/* ---------- রিভিউ (কাস্টমারের পাঠানো + নিজে ছবিসহ যোগ) ---------- */
+let rvFilter = 'all', rvImgs = [];
+const RVST = { pending: ['অনুমোদনের অপেক্ষায়', 'bg-yellow-100 text-yellow-800'], approved: ['সাইটে দেখাচ্ছে', 'bg-green-100 text-green-800'], hidden: ['লুকানো', 'bg-gray-200 text-gray-700'] };
+function vReviews() {
+  const all = D.reviews, list = all.filter(r => rvFilter === 'all' || r.status === rvFilter);
+  const cnt = k => k === 'all' ? all.length : all.filter(r => r.status === k).length;
+  return `<div class="flex flex-wrap gap-2 items-center mb-3 text-sm"><button class="btn" data-act="rvnew">➕ রিভিউ যোগ করুন (ছবিসহ)</button>
+    ${[['all', 'সব'], ['pending', 'অপেক্ষায়'], ['approved', 'দেখাচ্ছে'], ['hidden', 'লুকানো']].map(([k, n]) => `<button data-act="rvfilter" data-v="${k}" class="tab shrink-0 px-3 py-1.5 rounded-full border bg-white ${rvFilter === k ? 'on' : ''}">${n} (${bn(cnt(k))})</button>`).join('')}</div>
+  <p class="text-xs text-black/55 mb-3">কাস্টমারের রিভিউ "অপেক্ষায়" থাকে — অনুমোদন দিলে তবেই সাইটে দেখায়। নিজে যোগ করলে সাথে সাথে দেখায়।</p>
+  <div class="space-y-3">${list.map(r => `<div class="card p-3">
+    <div class="flex flex-wrap items-center gap-2 text-sm"><b>${esc(r.name)}</b><span class="px-2 py-0.5 rounded-full text-xs font-bold ${RVST[r.status]?.[1] || ''}">${RVST[r.status]?.[0] || esc(r.status)}</span><span class="text-xs text-black/50">${r.source === 'admin' ? 'এডমিন যোগ করেছে' : 'কাস্টমার'} · ${dt(r.createdAt)}</span>${r.status === 'approved' && r.home === false ? '<span class="text-xs text-black/50">· হোমে নেই</span>' : ''}</div>
+    ${r.pname ? `<p class="text-xs text-black/60 mt-1">পণ্য: ${esc(r.pname)}</p>` : ''}
+    ${r.text ? `<p class="text-sm mt-2 whitespace-pre-line break-words">${esc(r.text)}</p>` : ''}
+    ${(r.images || []).length ? `<div class="flex gap-2 mt-2 flex-wrap">${r.images.map(u => `<a href="${esc(u)}" target="_blank"><img src="${esc(u)}" class="w-20 h-20 object-cover rounded-lg border"></a>`).join('')}</div>` : ''}
+    <div class="flex flex-wrap gap-2 mt-3">
+      ${r.status !== 'approved' ? `<button class="btn2 !py-1 !px-3 text-xs" data-act="rvset" data-st="approved" data-id="${r.id}">✅ অনুমোদন</button>` : `<button class="btn2 !py-1 !px-3 text-xs" data-act="rvset" data-st="hidden" data-id="${r.id}">🙈 লুকান</button>`}
+      ${r.status === 'approved' ? `<button class="btn2 !py-1 !px-3 text-xs" data-act="rvhome" data-id="${r.id}">${r.home === false ? '🏠 হোমে দেখান' : '🏠 হোম থেকে সরান'}</button>` : ''}
+      <button class="btn2 red !py-1 !px-3 text-xs" data-act="rvdel" data-id="${r.id}">ডিলিট</button></div></div>`).join('') || '<p class="text-sm text-black/50">কোনো রিভিউ নেই</p>'}</div>`;
+}
+function rvModal() {
+  openModal(`<div class="flex justify-between items-start"><h2 class="font-bold text-lg">রিভিউ যোগ করুন</h2><button class="btn2 !py-1 !px-3" data-act="close">✕</button></div>
+  <label class="block mt-3 text-sm font-semibold">কাস্টমারের নাম<input id="rvaName" class="inp mt-1 font-normal" maxlength="60"></label>
+  <label class="block mt-2 text-sm font-semibold">পণ্য (ঐচ্ছিক)<input id="rvaProd" list="rvaProds" class="inp mt-1 font-normal" placeholder="পণ্যের নাম লিখুন বা বেছে নিন"><datalist id="rvaProds">${D.products.map(p => `<option value="${esc(p.name)}">`).join('')}</datalist></label>
+  <label class="block mt-2 text-sm font-semibold">রিভিউ লেখা<textarea id="rvaText" rows="4" class="inp mt-1 font-normal" maxlength="1200"></textarea></label>
+  <div class="mt-2"><p class="text-sm font-semibold">ছবি (সর্বোচ্চ ৫টি)</p><div id="rvaImgs" class="flex gap-2 flex-wrap mt-1"></div><input type="file" accept="image/*" multiple data-in="rvimgs" class="mt-2 text-sm"></div>
+  <label class="flex items-center gap-2 mt-3 text-sm"><input type="checkbox" id="rvaHome" checked> হোমপেজের রিভিউ সেকশনেও দেখান</label>
+  <div class="flex gap-2 mt-4"><button class="btn" data-act="rvsave">সেভ করুন</button><button class="btn2 ml-auto" data-act="close">বন্ধ</button></div>`);
+  rvImgs = []; drawRvImgs();
+}
+const drawRvImgs = () => { const b = $('#rvaImgs'); if (b) b.innerHTML = rvImgs.map((u, i) => `<div class="relative"><img src="${esc(u)}" class="w-16 h-16 object-cover rounded-lg border"><button data-act="rvrmimg" data-i="${i}" class="absolute -top-2 -right-2 w-5 h-5 rounded-full bg-black text-white text-xs">✕</button></div>`).join(''); };
+
 /* ---------- টেলিগ্রামে অর্ডার (ম্যানুয়াল) ---------- */
 const TG = { botToken: '9066487623:AAGg0IzDGYd5r-5fLWg4l6Vx6sCTMBWJ5hc', chatId: '7971315503' };
 const tgTime = o => { try { return (o.createdAt?.toDate ? o.createdAt.toDate() : new Date()).toLocaleString('bn-BD', { timeZone: 'Asia/Dhaka', dateStyle: 'medium', timeStyle: 'short' }); } catch (e) { return ''; } };
@@ -691,7 +729,9 @@ function tgOrderText(o, lim) {
   L.push(`ডেলিভারি চার্জ: ${o.delivery === 0 ? 'ফ্রি' : o.delivery + '৳'}`, `সর্বমোট বিল: ${o.total}৳`, 'পেমেন্ট: ক্যাশ অন ডেলিভারি', 'সময়: ' + tgTime(o));
   return L.join('\n');
 }
+const tgClean = t => String(t).replace(/[\p{Extended_Pictographic}\u{1F1E6}-\u{1F1FF}\uFE0F\u200D\u20E3]/gu, '').replace(/[ \t]+\n/g, '\n').replace(/\n[ \t]+/g, '\n').replace(/ {2,}/g, ' ').trim();
 const tgApi = async (method, params) => {
+  params = { ...params }; ['text', 'caption'].forEach(k => { if (params[k]) params[k] = tgClean(params[k]); });
   const r = await fetch(`https://api.telegram.org/bot${TG.botToken}/${method}`, { method: 'POST', body: new URLSearchParams(params) });
   const d = await r.json().catch(() => ({}));
   if (!d.ok) throw new Error(d.description || ('HTTP ' + r.status));
@@ -806,7 +846,7 @@ const A = {
     const fcats = [...document.querySelectorAll('[data-catchk]:checked')].map(x => x.dataset.catchk), newCat = $('#fCat').value.trim();
     if (!form.id && newCat && !fcats.includes(newCat)) fcats.push(newCat);
     const d = { name: $('#fName').value.trim(), brand: canonBrand($('#fBrand').value) || detectBrand($('#fName').value), cat: $('#fCat').value.trim(), ...secFields(secs), featCats: fcats, regular: +$('#fReg').value, offer: +$('#fOff').value, stock: +$('#fStock').value || 0, desc: $('#fDesc').value.trim(), active: $('#fActive').checked, images: form.images,
-      shades: $('#fShades').value.split('\n').map(l => l.trim()).filter(Boolean).map(l => { const [n, c] = l.split('|').map(x => x.trim()); return { name: n, color: /^#[0-9a-f]{3,8}$/i.test(c || '') ? c : '' }; }).filter(x => x.name).slice(0, 40),
+      shades: cleanShades($('#fShades').value.split('\n').map(l => l.trim()).filter(Boolean)),
       variants: cleanVariants($('#fVariants').value.split('\n').map(l => { const [n, o, r, im] = l.split('|').map(x => x.trim()); return { name: n, offer: o, regular: r, img: im }; })) };
     if (d.variants.length) { const m = d.variants.reduce((a, b) => b.offer < a.offer ? b : a); d.offer = m.offer; d.regular = m.regular; }
     if (!d.name || !d.offer) return toast('নাম ও অফার দাম দিন');
@@ -819,6 +859,20 @@ const A = {
   migext: migrateExternal,
   impgo: impRun,
   impsample: impSample,
+  rvfilter: b => { rvFilter = b.dataset.v; render(); },
+  rvnew: () => rvModal(),
+  rvrmimg: b => { rvImgs.splice(+b.dataset.i, 1); drawRvImgs(); },
+  rvsave: async b => {
+    const name = $('#rvaName').value.trim(), text = $('#rvaText').value.trim(), pn = $('#rvaProd').value.trim();
+    if (!name) return toast('কাস্টমারের নাম লিখুন'); if (!text && !rvImgs.length) return toast('রিভিউ লিখুন বা ছবি দিন');
+    const p = pn ? D.products.find(x => x.name.toLowerCase() === pn.toLowerCase()) : null;
+    b.disabled = true;
+    try { await addDoc(collection(db, 'reviews'), { name, text, images: rvImgs, pid: p ? p.id : '', pname: p ? p.name : pn, status: 'approved', home: $('#rvaHome').checked, source: 'admin', createdAt: serverTimestamp() }); closeModal(); toast('রিভিউ যোগ হয়েছে ✅'); }
+    catch (e) { b.disabled = false; toast('সেভ হয়নি: ' + (e.code || e.message)); }
+  },
+  rvset: async b => { try { await updateDoc(doc(db, 'reviews', b.dataset.id), b.dataset.st === 'approved' ? { status: 'approved', home: true, approvedAt: serverTimestamp() } : { status: b.dataset.st }); toast(b.dataset.st === 'approved' ? 'অনুমোদন হয়েছে ✅' : 'লুকানো হয়েছে'); } catch (e) { toast('হয়নি: ' + (e.code || e.message)); } },
+  rvhome: async b => { const r = D.reviews.find(x => x.id === b.dataset.id); if (r) try { await updateDoc(doc(db, 'reviews', r.id), { home: r.home === false }); } catch (e) { toast('হয়নি: ' + (e.code || e.message)); } },
+  rvdel: async b => { if (confirm('রিভিউটি ডিলিট করবেন?')) try { await deleteDoc(doc(db, 'reviews', b.dataset.id)); toast('ডিলিট হয়েছে'); } catch (e) { toast('হয়নি: ' + (e.code || e.message)); } },
   tgorder: async b => {
     const o = D.orders.find(x => x.id === b.dataset.id); if (!o) return;
     if (o.tgAt && !confirm('এই অর্ডার আগে একবার টেলিগ্রামে পাঠানো হয়েছে। আবার পাঠাবেন?')) return;
@@ -887,6 +941,15 @@ document.addEventListener('input', e => {
 });
 document.addEventListener('change', async e => {
   const t = e.target, k = t.dataset.in;
+  if (k === 'rvimgs') {
+    const files = [...t.files]; t.value = ''; let ok = 0, fail = '';
+    for (const f of files) {
+      if (rvImgs.length >= 5) break;
+      toast('ছবি আপলোড হচ্ছে… (' + bn(ok + 1) + ')');
+      try { rvImgs.push(await uploadCld(f)); ok++; drawRvImgs(); } catch (er) { fail = er.message; }
+    }
+    toast(fail ? 'আপলোড হয়নি: ' + fail : bn(ok) + 'টি ছবি আপলোড হয়েছে ✅');
+  }
   if (k === 'pimgs') {
     const files = [...t.files]; t.value = ''; let ok = 0, fail = '';
     for (const f of files) {

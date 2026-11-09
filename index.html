@@ -338,6 +338,14 @@ src="https://www.facebook.com/tr?id=2030629185007983&ev=PageView&noscript=1"
 
 
 <!-- Why Azaan -->
+<section id="reviews" class="max-w-7xl mx-auto px-4 py-8 sm:py-10">
+  <div class="flex items-end justify-between gap-3 flex-wrap">
+    <div><h2 class="font-display text-2xl sm:text-3xl font-extrabold">কাস্টমারদের রিভিউ</h2><p class="text-sm text-black/60 mt-1">আমাদের ক্রেতাদের অভিজ্ঞতা</p></div>
+    <button type="button" data-rvopen="" class="px-5 py-2.5 rounded-full bg-leaf-500 hover:bg-ink hover:text-white text-ink font-bold text-sm transition">✍ রিভিউ লিখুন</button>
+  </div>
+  <div id="rvList" class="mt-5 flex gap-4 overflow-x-auto pb-2 snap-x"></div>
+</section>
+
 <section id="why" class="bg-white border-y border-black/10">
   <div class="max-w-7xl mx-auto px-4 py-12 grid grid-cols-2 lg:grid-cols-4 gap-6 sm:gap-8">
     <div class="text-center">
@@ -544,6 +552,24 @@ src="https://www.facebook.com/tr?id=2030629185007983&ev=PageView&noscript=1"
 <!-- Quick view modal -->
 <div id="qvOverlay" class="fixed inset-0 bg-black/55 z-[55] hidden grid place-items-center p-4 overflow-y-auto">
   <div id="qvCard" class="modal-card relative bg-white rounded-3xl max-w-3xl w-full overflow-hidden shadow-2xl my-auto" role="dialog" aria-modal="true" aria-label="Product details"></div>
+
+<div id="rvModal" class="fixed inset-0 z-[70] hidden bg-black/55 overflow-y-auto p-4 grid place-items-center">
+  <form id="rvForm" novalidate autocomplete="off" class="relative bg-white rounded-3xl max-w-md w-full p-6 shadow-2xl my-auto">
+    <button type="button" data-rvclose class="absolute top-3 right-3 w-9 h-9 rounded-full bg-leaf-50 grid place-items-center hover:bg-leaf-100" aria-label="Close">✕</button>
+    <h3 class="font-display text-xl font-extrabold pr-8">আপনার রিভিউ লিখুন</h3>
+    <p class="text-xs text-black/55 mt-1">যাচাইয়ের পর রিভিউটি সাইটে দেখানো হবে।</p>
+    <label class="block mt-4 text-sm font-semibold">আপনার নাম<input name="rvName" maxlength="60" class="w-full mt-1 rounded-xl border border-black/20 px-3 py-2.5 text-sm font-normal focus:outline-none focus:border-ink"></label>
+    <label class="block mt-3 text-sm font-semibold">কোন পণ্যের রিভিউ <span class="font-normal text-black/50">(ঐচ্ছিক)</span><input name="rvProd" list="rvProdList" class="w-full mt-1 rounded-xl border border-black/20 px-3 py-2.5 text-sm font-normal focus:outline-none focus:border-ink" placeholder="পণ্যের নাম লিখুন বা বেছে নিন"><datalist id="rvProdList"></datalist></label>
+    <label class="block mt-3 text-sm font-semibold">আপনার মতামত<textarea name="rvText" rows="4" maxlength="1200" class="w-full mt-1 rounded-xl border border-black/20 px-3 py-2.5 text-sm font-normal focus:outline-none focus:border-ink"></textarea></label>
+    <div class="mt-3"><p class="text-sm font-semibold">ছবি <span class="font-normal text-black/50">(সর্বোচ্চ ৩টি, ঐচ্ছিক)</span></p>
+      <label class="inline-block mt-1 px-4 py-2 rounded-full border border-black/20 text-sm font-semibold cursor-pointer hover:border-ink">📷 ছবি বেছে নিন<input type="file" id="rvFile" accept="image/*" multiple class="hidden"></label>
+      <div id="rvPrev" class="flex gap-3 mt-3 flex-wrap"></div></div>
+    <input name="rvHp" tabindex="-1" autocomplete="off" class="hidden" aria-hidden="true">
+    <p id="rvMsg" class="text-sm mt-3"></p>
+    <button type="submit" id="rvSend" class="mt-4 w-full py-3.5 rounded-full bg-ink hover:bg-leaf-500 text-white hover:text-ink font-bold transition">রিভিউ পাঠান</button>
+  </form>
+</div>
+<div id="rvLight" class="fixed inset-0 z-[80] hidden bg-black/85 grid place-items-center p-4 cursor-zoom-out"><img alt="" class="max-h-full max-w-full rounded-xl"></div>
 </div>
 
 <!-- Full-screen live product search -->
@@ -720,6 +746,7 @@ const pk = (k) => { const parts = String(k).split('|'); let shade = '', variant 
 // ভ্যারিয়েন্ট (ml/সাইজ): প্রতিটার আলাদা দাম
 const hasVariants = (p) => !!(p && p.variants && p.variants.length);
 const vOf = (p, name) => (p && p.variants && p.variants.find((v) => v.name === name)) || null;
+const shImgIdx = (p, name) => { const s = p && p.shades && name ? p.shades.find((x) => x.name === name) : null; return s && s.img && p.imgs && p.imgs[s.img - 1] ? s.img - 1 : -1; };
 const vImg = (p, name) => { const v = vOf(p, name); return (v && v.img && p.imgs && p.imgs[v.img - 1]) || IMG[p.id]; };
 const unitOf = (p, name) => { if (!p) return { offer: 0, regular: 0 }; const v = vOf(p, name); return v ? { offer: v.offer, regular: v.regular || v.offer } : { offer: p.offer, regular: p.regular }; };
 const hasShades = (p) => !!(p && p.shades && p.shades.length);
@@ -903,9 +930,9 @@ function renderQuick() {
     <button data-qvclose class="absolute top-3 right-3 z-10 w-9 h-9 rounded-full bg-white shadow grid place-items-center hover:bg-leaf-100" aria-label="Close">✕</button>
     <div class="grid md:grid-cols-2">
       <div class="relative bg-leaf-50">
-        <img src="${(qvImg >= 0 && p.imgs && p.imgs[qvImg]) || vImg(p, qvVariant)}" alt="${esc(p.name)}" class="w-full aspect-[4/5] md:h-full object-cover">
+        <img src="${(qvImg >= 0 && p.imgs && p.imgs[qvImg]) || (shImgIdx(p, qvShade) >= 0 && p.imgs[shImgIdx(p, qvShade)]) || vImg(p, qvVariant)}" alt="${esc(p.name)}" class="w-full aspect-[4/5] md:h-full object-cover">
         ${d > 0 ? `<span class="absolute top-3 left-3 px-3 py-1 rounded-full text-xs font-bold bg-leaf-500 text-ink shadow">-${d}%</span>` : ''}
-        ${p.imgs && p.imgs.length > 1 ? `<div class="absolute bottom-3 left-3 right-3 flex gap-2 overflow-x-auto pb-1">${p.imgs.map((u, i) => `<button type="button" data-qvthumb="${i}" class="shrink-0 w-12 h-14 rounded-lg overflow-hidden border-2 bg-white ${((qvImg >= 0 ? qvImg : -1) === i) ? 'border-ink' : 'border-white/80'} shadow"><img src="${u}" alt="" loading="lazy" class="w-full h-full object-cover"></button>`).join('')}</div>` : ''}
+        ${p.imgs && p.imgs.length > 1 ? `<div class="absolute bottom-3 left-3 right-3 flex gap-2 overflow-x-auto pb-1">${p.imgs.map((u, i) => `<button type="button" data-qvthumb="${i}" class="shrink-0 w-12 h-14 rounded-lg overflow-hidden border-2 bg-white ${((qvImg >= 0 ? qvImg : shImgIdx(p, qvShade)) === i) ? 'border-ink' : 'border-white/80'} shadow"><img src="${u}" alt="" loading="lazy" class="w-full h-full object-cover"></button>`).join('')}</div>` : ''}
       </div>
       <div class="p-6 sm:p-8 flex flex-col">
         <p class="text-xs text-leaf-700 font-bold uppercase tracking-wide">${p.cat}</p>
@@ -936,9 +963,124 @@ function renderQuick() {
           <button data-qvadd class="py-3.5 rounded-full bg-leaf-500 hover:bg-ink hover:text-white text-ink font-bold transition text-sm sm:text-base">Add to Cart · ${taka(UP.offer * qvQty)}</button>
           <button data-qvbuy class="py-3.5 rounded-full bg-ink hover:bg-leaf-500 text-white hover:text-ink font-bold transition text-sm sm:text-base">Buy Now</button>
         </div>
+        <div id="qvRev" data-pid="${esc(p.fid || '')}" class="mt-6 pt-4 border-t border-black/10"></div>
       </div>
     </div>`;
+  try { paintQvReviews(p); } catch (e) {}
 }
+
+/* ---------- কাস্টমার রিভিউ (ছবিসহ, রেটিং ছাড়া; এডমিন অনুমোদন দিলে দেখায়) ---------- */
+const RV_CLD = { cloud: 'vapfnr6g', preset: 'azaan_products' };
+const RV_P = new Map(), RV_ROWS = new Map(); let rvPhotos = [], rvBusy = false;
+const waitAZ = async () => { for (let i = 0; i < 40; i++) { if (window.AZ && window.AZ.query) return window.AZ; await new Promise((r) => setTimeout(r, 250)); } throw new Error('not connected'); };
+function rvFetch(pid) {
+  const key = pid || '*'; if (RV_P.has(key)) return RV_P.get(key);
+  const pr = (async () => {
+    const A = await waitAZ();
+    const cond = pid ? [A.where('pid', '==', pid), A.where('status', '==', 'approved')] : [A.where('status', '==', 'approved'), A.where('home', '==', true)];
+    const s = await A.getDocs(A.query(A.collection(A.db, 'reviews'), ...cond, A.limit(pid ? 30 : 24)));
+    const rows = s.docs.map((d) => ({ id: d.id, ...d.data() })).sort((a, b) => ((b.createdAt && b.createdAt.seconds) || 0) - ((a.createdAt && a.createdAt.seconds) || 0));
+    RV_ROWS.set(key, rows); return rows;
+  })();
+  pr.catch(() => RV_P.delete(key));
+  RV_P.set(key, pr); return pr;
+}
+const rvDate = (r) => { try { return r.createdAt && r.createdAt.toDate ? r.createdAt.toDate().toLocaleDateString('bn-BD', { dateStyle: 'medium' }) : ''; } catch (e) { return ''; } };
+function rvCard(r, showProd, wide) {
+  const imgs = (r.images || []).filter((u) => /^https?:\/\//i.test(u)).slice(0, 4);
+  return `<article class="${wide ? 'snap-start shrink-0 w-72 sm:w-80' : ''} rounded-2xl border border-black/10 bg-white p-4">
+    ${imgs.length ? `<div class="flex gap-2 overflow-x-auto mb-3">${imgs.map((u) => `<img src="${esc(u)}" data-rvzoom alt="রিভিউ ছবি" loading="lazy" class="h-24 w-24 object-cover rounded-xl cursor-zoom-in shrink-0 bg-leaf-50">`).join('')}</div>` : ''}
+    ${r.text ? `<p class="text-sm leading-relaxed whitespace-pre-line break-words">${esc(r.text)}</p>` : ''}
+    <p class="mt-3 text-xs text-black/55"><b class="text-ink">${esc(r.name || 'কাস্টমার')}</b>${rvDate(r) ? ' · ' + rvDate(r) : ''}${showProd && r.pname ? '<br>পণ্য: ' + esc(r.pname) : ''}</p>
+  </article>`;
+}
+function paintQvReviews(p) {
+  const pid = p.fid; if (!pid) return;
+  const head = (n) => `<div class="flex items-center justify-between gap-3"><h4 class="font-bold">কাস্টমার রিভিউ${n ? ' (' + n + ')' : ''}</h4><button type="button" data-rvopen="${esc(pid)}" class="px-3.5 py-2 rounded-full border border-black/20 text-sm font-semibold hover:border-ink">✍ রিভিউ লিখুন</button></div>`;
+  const draw = (rows) => {
+    const box = document.getElementById('qvRev'); if (!box || box.dataset.pid !== pid) return;
+    box.innerHTML = head(rows.length) + (rows.length ? `<div class="mt-3 space-y-3 max-h-72 overflow-y-auto pr-1">${rows.map((r) => rvCard(r, false, false)).join('')}</div>` : '<p class="mt-2 text-sm text-black/50">এখনো কোনো রিভিউ নেই। প্রথম রিভিউটি আপনিই দিন!</p>');
+  };
+  if (RV_ROWS.has(pid)) return draw(RV_ROWS.get(pid));
+  const box = document.getElementById('qvRev'); if (box) box.innerHTML = head(0) + '<p class="mt-2 text-sm text-black/50">রিভিউ লোড হচ্ছে…</p>';
+  rvFetch(pid).then(draw).catch(() => { const b = document.getElementById('qvRev'); if (b && b.dataset.pid === pid) b.innerHTML = head(0); });
+}
+function paintHomeReviews() {
+  const box = document.getElementById('rvList'); if (!box) return;
+  const draw = (rows) => { box.innerHTML = rows.length ? rows.map((r) => rvCard(r, true, true)).join('') : '<p class="text-sm text-black/50">এখনো কোনো রিভিউ নেই। প্রথম রিভিউটি আপনিই দিন!</p>'; };
+  box.innerHTML = '<p class="text-sm text-black/50">লোড হচ্ছে…</p>';
+  rvFetch(null).then(draw).catch(() => { box.innerHTML = ''; });
+}
+(function () {
+  const sec = document.getElementById('reviews'); if (!sec) return;
+  if ('IntersectionObserver' in window) { const io = new IntersectionObserver((en) => { if (en.some((x) => x.isIntersecting)) { io.disconnect(); paintHomeReviews(); } }, { rootMargin: '300px' }); io.observe(sec); }
+  else paintHomeReviews();
+})();
+function rvCompress(file) {
+  return new Promise((res, rej) => {
+    const fr = new FileReader();
+    fr.onerror = rej;
+    fr.onload = () => { const im = new Image(); im.onerror = rej; im.onload = () => {
+      const k = Math.min(1, 1000 / Math.max(im.width, im.height)), c = document.createElement('canvas'); c.width = Math.max(1, Math.round(im.width * k)); c.height = Math.max(1, Math.round(im.height * k));
+      const g = c.getContext('2d'); g.fillStyle = '#fff'; g.fillRect(0, 0, c.width, c.height); g.drawImage(im, 0, 0, c.width, c.height);
+      c.toBlob((b) => (b ? res(b) : rej(new Error('image'))), 'image/jpeg', 0.82);
+    }; im.src = fr.result; };
+    fr.readAsDataURL(file);
+  });
+}
+async function rvUpload(blob) {
+  const fd = new FormData(); fd.append('file', blob); fd.append('upload_preset', RV_CLD.preset);
+  const r = await fetch(`https://api.cloudinary.com/v1_1/${RV_CLD.cloud}/image/upload`, { method: 'POST', body: fd });
+  const j = await r.json().catch(() => ({})); if (!r.ok || !j.secure_url) throw new Error((j.error && j.error.message) || 'upload failed');
+  return j.secure_url.replace('/upload/', '/upload/f_auto,q_auto,w_800/');
+}
+function rvPrev() {
+  const box = document.getElementById('rvPrev'); if (!box) return;
+  box.innerHTML = rvPhotos.map((x, i) => `<div class="relative"><img src="${x.url}" alt="" class="w-16 h-16 object-cover rounded-xl border border-black/10"><button type="button" data-rvrm="${i}" class="absolute -top-2 -right-2 w-6 h-6 rounded-full bg-ink text-white text-xs grid place-items-center" aria-label="মুছুন">✕</button></div>`).join('');
+}
+const rvMsg = (t, ok) => { const m = document.getElementById('rvMsg'); if (m) { m.textContent = t || ''; m.className = 'text-sm mt-3 ' + (ok ? 'text-leaf-800 font-semibold' : 'text-red-600'); } };
+function rvOpen(pid) {
+  const f = document.getElementById('rvForm'); if (!f) return;
+  document.getElementById('rvProdList').innerHTML = PRODUCTS.map((p) => `<option value="${esc(p.name)}">`).join('');
+  const p = pid ? PRODUCTS.find((x) => x.fid === pid) : null; f.rvProd.value = p ? p.name : '';
+  rvMsg(''); document.getElementById('rvModal').classList.remove('hidden');
+}
+function rvClose() { document.getElementById('rvModal').classList.add('hidden'); }
+document.addEventListener('click', (e) => {
+  const t = e.target; if (!t.closest) return;
+  const o = t.closest('[data-rvopen]'); if (o) { e.preventDefault(); return rvOpen(o.dataset.rvopen); }
+  if (t.closest('[data-rvclose]') || t.id === 'rvModal') return rvClose();
+  const rm = t.closest('[data-rvrm]'); if (rm) { const x = rvPhotos.splice(+rm.dataset.rvrm, 1)[0]; if (x) URL.revokeObjectURL(x.url); return rvPrev(); }
+  const z = t.closest('[data-rvzoom]'); if (z) { const L = document.getElementById('rvLight'); L.querySelector('img').src = z.src.replace('w_800', 'w_1400'); L.classList.remove('hidden'); return; }
+  if (t.closest('#rvLight')) document.getElementById('rvLight').classList.add('hidden');
+});
+document.getElementById('rvFile').addEventListener('change', async (e) => {
+  const files = [...e.target.files]; e.target.value = '';
+  for (const f of files) {
+    if (rvPhotos.length >= 3) { rvMsg('সর্বোচ্চ ৩টি ছবি দেওয়া যাবে'); break; }
+    try { const b = await rvCompress(f); rvPhotos.push({ blob: b, url: URL.createObjectURL(b) }); } catch (er) { rvMsg('একটি ছবি পড়া যায়নি'); }
+  }
+  rvPrev();
+});
+document.getElementById('rvForm').addEventListener('submit', async (e) => {
+  e.preventDefault(); if (rvBusy) return;
+  const f = e.target, name = f.rvName.value.trim(), text = f.rvText.value.trim(), pn = f.rvProd.value.trim();
+  if (f.rvHp.value) return;
+  if (name.length < 2) return rvMsg('আপনার নাম লিখুন');
+  if (text.length < 5 && !rvPhotos.length) return rvMsg('একটু মতামত লিখুন, অথবা ছবি দিন');
+  try { const last = +localStorage.getItem('az_rv_t') || 0; if (Date.now() - last < 30000) return rvMsg('একটু পরে আবার চেষ্টা করুন'); } catch (er) {}
+  rvBusy = true; const btn = document.getElementById('rvSend'); btn.disabled = true; btn.textContent = 'পাঠানো হচ্ছে…'; rvMsg('');
+  try {
+    const images = []; for (const x of rvPhotos) images.push(await rvUpload(x.blob));
+    const A = await waitAZ(), p = pn ? PRODUCTS.find((x) => x.name.toLowerCase() === pn.toLowerCase()) : null;
+    await A.addDoc(A.collection(A.db, 'reviews'), { name: name.slice(0, 60), text: text.slice(0, 1200), images, pid: p ? p.fid : '', pname: p ? p.name : pn.slice(0, 120), status: 'pending', home: true, source: 'customer', createdAt: A.serverTimestamp() });
+    try { localStorage.setItem('az_rv_t', String(Date.now())); } catch (er) {}
+    f.reset(); rvPhotos.forEach((x) => URL.revokeObjectURL(x.url)); rvPhotos = []; rvPrev();
+    rvMsg('ধন্যবাদ! আপনার রিভিউ জমা হয়েছে। যাচাইয়ের পর সাইটে দেখানো হবে।', true);
+    setTimeout(rvClose, 2500);
+  } catch (er) { console.warn('review failed', er); rvMsg('দুঃখিত, রিভিউ পাঠানো যায়নি। একটু পরে আবার চেষ্টা করুন।'); }
+  finally { rvBusy = false; btn.disabled = false; btn.textContent = 'রিভিউ পাঠান'; }
+});
 /* ---------- Meta Pixel ইভেন্ট ---------- */
 const fbTrack = (ev, params, opts) => { try { if (window.fbq) (opts ? fbq('track', ev, params, opts) : fbq('track', ev, params)); } catch (e) {} };
 let fbCheckoutSent = false;
@@ -1206,16 +1348,18 @@ function buildOrder(info, t) {
 }
 function buildOrderText(o, lim) {
   const L = [
-    `🛍️ নতুন অর্ডার — ${o.id}`, '',
-    `👤 নাম: ${o.name}`, `📞 মোবাইল: ${o.phone}`, `🏙️ জেলা: ${o.area}`, `📍 ঠিকানা: ${o.address}`, '',
-    '📦 অর্ডারের পণ্য:'
+    `নতুন অর্ডার — ${o.id}`, '',
+    `নাম: ${o.name}`, `মোবাইল: ${o.phone}`, `জেলা: ${o.area}`, `ঠিকানা: ${o.address}`, '',
+    'অর্ডারের পণ্য:'
   ];
   o.lines.forEach((l, i) => { const nm = lim && l.name.length > lim ? l.name.slice(0, lim - 1) + '…' : l.name; L.push(`${i + 1}) ${nm}${l.variant ? ` [সাইজ: ${l.variant}]` : ''}${l.shade ? ` [শেড: ${l.shade}]` : ''} — ${l.qty} পিস × ${l.unit}৳ = ${l.total}৳`); });
   L.push('', `পণ্যের মূল্য: ${o.sub}৳`);
   if (o.discount > 0) L.push(`প্রমো ছাড় (${o.promo}): -${o.discount}৳`);
-  L.push(`ডেলিভারি চার্জ: ${o.delivery === 0 ? 'ফ্রি' : o.delivery + '৳'}`, `💰 সর্বমোট বিল: ${o.total}৳`, '💵 পেমেন্ট: ক্যাশ অন ডেলিভারি', `🕒 ${o.time}`);
+  L.push(`ডেলিভারি চার্জ: ${o.delivery === 0 ? 'ফ্রি' : o.delivery + '৳'}`, `সর্বমোট বিল: ${o.total}৳`, 'পেমেন্ট: ক্যাশ অন ডেলিভারি', `সময়: ${o.time}`);
   return L.join('\n');
 }
+// টেলিগ্রামে যাওয়া লেখা থেকে সব ইমোজি/স্টিকার চিহ্ন বাদ (কাস্টমারের লেখা নামেও থাকলে)
+const tgClean = (t) => String(t).replace(/[\p{Extended_Pictographic}\u{1F1E6}-\u{1F1FF}\uFE0F\u200D\u20E3]/gu, '').replace(/[ \t]+\n/g, '\n').replace(/\n[ \t]+/g, '\n').replace(/ {2,}/g, ' ').trim();
 const telegramReady = () => !!(TELEGRAM.botToken && TELEGRAM.chatId);
 // পণ্যের ছবির পূর্ণ লিংক (টেলিগ্রাম/অর্ডারে পাঠানোর জন্য); data: ছবি বাদ
 const imgUrl = (id) => { const u = IMG[id]; if (!u || String(u).startsWith('data:')) return ''; try { return new URL(u, location.href).href; } catch (e) { return ''; } };
@@ -1272,39 +1416,37 @@ async function tgPrepPhoto(src, dbg) {
   } catch (e) { /* মূল ফাইলই পাঠানো হবে */ }
   return blob;
 }
-// অর্ডারের লেখা + ছবি = একটাই বার্তা (ছবির অ্যালবামের ক্যাপশনে অর্ডারের বিবরণ)
+// আগে অর্ডারের লেখা (দ্রুত, ট্যাব বন্ধ হলেও যাতে যায়), তারপর ছবি আলাদা বার্তায়
 async function sendOrderToTelegram(order, text) {
   if (!telegramReady()) throw new Error('telegram not configured');
+  await sendToTelegram(text);                        // এটা না গেলে ব্যর্থ ধরা হয়
+  sendOrderPhotos(order).catch((e) => console.warn('Telegram photos failed:', e));   // ছবি না গেলেও অর্ডার পৌঁছে গেছে
+}
+async function sendOrderPhotos(order) {
   const photos = order.lines.filter((l) => l.src).slice(0, 10);
-  if (!photos.length) return sendToTelegram(text + '\n\n(ছবি নেই: পণ্যে ছবি পাওয়া যায়নি)');
-  let why = '', dbg = [];
-  try {
-    const base = `https://api.telegram.org/bot${TELEGRAM.botToken}/`, caption = fitCaption(order), fd = new FormData();
-    fd.append('chat_id', TELEGRAM.chatId);
-    const refs = [];
-    for (let i = 0; i < photos.length; i++) {
-      const p = await tgPrepPhoto(photos[i].src, dbg);
-      if (!p) continue;
-      if (typeof p === 'string') refs.push(p);
-      else { fd.append('f' + i, p, 'p' + i + '.jpg'); refs.push('attach://f' + i); }
-    }
-    if (!refs.length) throw new Error('no usable photo');
-    let r;
-    if (refs.length === 1) { fd.append('photo', refs[0]); fd.append('caption', caption); r = await fetch(base + 'sendPhoto', { method: 'POST', body: fd }); }
-    else { fd.append('media', JSON.stringify(refs.map((m, i) => i === 0 ? { type: 'photo', media: m, caption } : { type: 'photo', media: m }))); r = await fetch(base + 'sendMediaGroup', { method: 'POST', body: fd }); }
-    const d = await r.json().catch(() => ({}));
-    if (d.ok) return;
-    why = d.description || ('HTTP ' + r.status);
-  } catch (e) { why = (e && e.message) || String(e); }
-  console.warn('Telegram photo message failed:', why);
-  await sendToTelegram(text + '\n\n⚠️ ছবি পাঠানো যায়নি (' + String(why).slice(0, 80) + ')\n🔗 ' + photos.map((p) => p.src.slice(0, 90)).join(' , ').slice(0, 220) + (dbg.length ? '\n' + dbg.join(' | ').slice(0, 200) : ''));   // ছবি না গেলেও অর্ডার পৌঁছায়
+  if (!photos.length) return;
+  const dbg = [], base = `https://api.telegram.org/bot${TELEGRAM.botToken}/`, caption = 'অর্ডার ' + order.id + ' — পণ্যের ছবি', fd = new FormData();
+  fd.append('chat_id', TELEGRAM.chatId);
+  const refs = [];
+  for (let i = 0; i < photos.length; i++) {
+    const p = await tgPrepPhoto(photos[i].src, dbg);
+    if (!p) continue;
+    if (typeof p === 'string') refs.push(p);
+    else { fd.append('f' + i, p, 'p' + i + '.jpg'); refs.push('attach://f' + i); }
+  }
+  if (!refs.length) throw new Error('no usable photo ' + dbg.join(' | '));
+  let r;
+  if (refs.length === 1) { fd.append('photo', refs[0]); fd.append('caption', caption); r = await fetch(base + 'sendPhoto', { method: 'POST', body: fd }); }
+  else { fd.append('media', JSON.stringify(refs.map((m, i) => i === 0 ? { type: 'photo', media: m, caption } : { type: 'photo', media: m }))); r = await fetch(base + 'sendMediaGroup', { method: 'POST', body: fd }); }
+  const d = await r.json().catch(() => ({}));
+  if (!d.ok) throw new Error(d.description || ('HTTP ' + r.status));
 }
 async function sendToTelegram(text) {
   const ctrl = new AbortController();
   const timer = setTimeout(() => ctrl.abort(), 15000);
   try {
     const res = await fetch(`https://api.telegram.org/bot${TELEGRAM.botToken}/sendMessage`, {
-      method: 'POST', body: new URLSearchParams({ chat_id: TELEGRAM.chatId, text }), signal: ctrl.signal
+      method: 'POST', body: new URLSearchParams({ chat_id: TELEGRAM.chatId, text: tgClean(text) }), signal: ctrl.signal, keepalive: true
     });
     const data = await res.json().catch(() => ({}));
     if (!res.ok || !data.ok) throw new Error(data.description || 'HTTP ' + res.status);
@@ -1330,10 +1472,11 @@ $('#coForm').addEventListener('submit', async (e) => {
   const demo = false;
   setOrdering(true);
   try {
-    await saveOrder(order, t);
+    const oref = await saveOrder(order, t);
     fbTrack('Purchase', { content_ids: t.lines.map((l) => String(l.p.id)), contents: fbContents(t.lines), content_type: 'product', num_items: t.count, value: t.total, currency: 'BDT' }, { eventID: String(order.id) });
     fbCheckoutSent = false;
-    sendOrderToTelegram(order, text).catch((x) => console.warn('Telegram failed:', x));
+    const tgMark = (ok) => { try { const A = window.AZ; A.updateDoc(oref, ok ? { tgAt: A.serverTimestamp() } : { tgFail: true }).catch(() => {}); } catch (e) {} };
+    sendOrderToTelegram(order, text).then(() => tgMark(true)).catch((x) => { console.warn('Telegram failed:', x); tgMark(false); });
     lastOrderText = text;
     showingSuccess = true;
     cart = {}; promoApplied = ''; promoErr = ''; currentOrderId = null;
@@ -1446,7 +1589,7 @@ document.addEventListener('click', (e) => {
   if (e.target.closest('[data-qvplus]')) { qvQty = Math.min(20, qvQty + 1); return renderQuick(); }
   if (e.target.closest('[data-qvwish]')) { toggleWish(qvId); return renderQuick(); }
   const shBtn = e.target.closest('[data-qvshade]');
-  if (shBtn) { const sh = (byId(qvId).shades || [])[+shBtn.dataset.qvshade]; qvShade = sh ? sh.name : ''; return renderQuick(); }
+  if (shBtn) { const sh = (byId(qvId).shades || [])[+shBtn.dataset.qvshade]; qvShade = sh ? sh.name : ''; qvImg = -1; return renderQuick(); }
   const thBtn = e.target.closest('[data-qvthumb]');
   if (thBtn) { qvImg = +thBtn.dataset.qvthumb; return renderQuick(); }
   const vaBtn = e.target.closest('[data-qvvariant]');
@@ -1660,8 +1803,9 @@ async function saveOrder(o, t) {
     subtotal: o.sub, delivery: o.delivery, discount: o.discount, promo: o.promo || '', total: o.total,
     status: 'pending', createdAt: AZ.serverTimestamp()
   });
-  await Promise.race([write, new Promise((_, rej) => setTimeout(() => rej(new Error('timeout')), 15000))]);
+  const ref = await Promise.race([write, new Promise((_, rej) => setTimeout(() => rej(new Error('timeout')), 15000))]);
   if (o.promo) { AZ.updateDoc(AZ.doc(AZ.db, 'promos', o.promo), { used: AZ.increment(1) }).catch(() => {}); }
+  return ref;
 }
 
 const numId = (fid) => {
@@ -1712,7 +1856,7 @@ window.azApplyProducts = (docs, force) => {
   const list = act.map((d) => ({
     id: numId(d.fid), fid: d.fid, groups: secOf(d), group: secOf(d).includes('sandalwood') ? 'sandalwood' : secOf(d).includes('bamboo') ? 'bamboo' : 'none', name: d.name,
     cat: d.cat || 'Others', cats: Array.isArray(d.featCats) ? d.featCats : [d.cat || 'Others'], regular: +d.regular || +d.offer, offer: +d.offer, desc: d.desc || '', brand: canonBrand(d.brand) || detectBrand(d.name), rawBrand: d.brand || '',
-    shades: Array.isArray(d.shades) ? d.shades.filter((x) => x && x.name).map((x) => ({ name: String(x.name), color: x.color || '' })) : [],
+    shades: Array.isArray(d.shades) ? d.shades.filter((x) => x && x.name).map((x) => ({ name: String(x.name), color: x.color || '', img: Math.floor(+x.img) > 0 ? Math.floor(+x.img) : 0 })) : [],
     variants: Array.isArray(d.variants) ? d.variants.filter((x) => x && x.name && +x.offer > 0).map((x) => ({ name: String(x.name), offer: +x.offer, regular: Math.max(+x.regular || +x.offer, +x.offer), img: Math.floor(+x.img) > 0 ? Math.floor(+x.img) : 0 })) : [],
     imgs: Array.isArray(d.images) ? d.images.filter(Boolean) : []
   }));
@@ -1912,10 +2056,10 @@ route();
 <script src="firebase-config.js"></script>
 <script type="module">
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
-import { getFirestore, collection, doc, getDoc, addDoc, updateDoc, onSnapshot, serverTimestamp, increment } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
+import { getFirestore, collection, doc, getDoc, getDocs, addDoc, updateDoc, onSnapshot, serverTimestamp, increment, query, where, limit } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
 try {
   const db = getFirestore(initializeApp(window.FIREBASE_CONFIG));
-  window.AZ = { db, collection, doc, getDoc, addDoc, updateDoc, serverTimestamp, increment };
+  window.AZ = { db, collection, doc, getDoc, getDocs, addDoc, updateDoc, serverTimestamp, increment, query, where, limit };
   const quiet = () => {};
   onSnapshot(doc(db, 'settings', 'main'), (s) => window.azApplySettings(s.data() || {}), quiet);
   /* প্রোডাক্ট লোড: এডমিন যে "catalog" (কয়েকটি বড় ডকুমেন্ট) বানায় সেটি পড়া হয়, তাই প্রতি ভিজিটে মাত্র কয়েকটি রিড লাগে।
