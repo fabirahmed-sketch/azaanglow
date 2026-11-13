@@ -59,7 +59,7 @@ const badge = s => `<span class="px-2 py-0.5 rounded-full text-xs font-bold ${ST
 const TABS = [['dash','ড্যাশবোর্ড'],['products','প্রোডাক্ট'],['sections','ফিচারড সেকশন ও ক্যাটাগরি'],['home','হোমপেজ সেকশন'],['brands','ব্র্যান্ড'],['orders','অর্ডার'],['reviews','রিভিউ'],['customers','কাস্টমার'],['promos','প্রমো কোড'],['banners','ব্যানার'],['offers','অফার আইকন'],['popups','পপআপ এড'],['settings','সেটিংস']];
 
 const D = { products:[], orders:[], reviews:[], promos:[], banners:[], settings:{} };
-let tab = 'dash', oFilter = 'all', oSearch = '', pSearch = '', secQ = {}, autoBusy = false, form = {}, soundOn = false, firstLoad = {}, unsubs = [];
+let tab = 'dash', oFilter = 'all', oSearch = '', pSearch = '', pFilter = 'all', secQ = {}, autoBusy = false, form = {}, soundOn = false, firstLoad = {}, unsubs = [];
 
 /* ---------- Auth ---------- */
 $('#loginForm').addEventListener('submit', async e => {
@@ -298,19 +298,27 @@ function catalogCsv() {
   const el = document.createElement('a'); el.href = URL.createObjectURL(blob); el.download = 'meta-catalog.csv'; el.click(); setTimeout(() => URL.revokeObjectURL(el.href), 2000);
   toast(bn(rows.length - 1) + 'টি প্রোডাক্ট নামল' + (skipped ? ' · ছবির লিংক নেই বলে ' + bn(skipped) + 'টি বাদ' : ''), 5000);
 }
+/* ---------- ladyglamour থেকে আনা প্রোডাক্ট আলাদা করা + এডিটেড চিহ্ন ---------- */
+const isLG = p => p.source === 'ladyglamour' || (p.images || []).some(x => /ladyglamourwh\.com/i.test(String(x)));
+const PF = { all: () => true, lg: p => isLG(p), todo: p => isLG(p) && !p.edited, done: p => !!p.edited, own: p => !isLG(p) };
+const PFN = [['all', 'সব'], ['lg', '🛒 Ladyglamour'], ['todo', '⏳ এডিট বাকি'], ['done', '✏️ এডিটেড'], ['own', 'নিজের']];
 function vProducts(onlyList) {
-  const q = pSearch.toLowerCase(), list = D.products.filter(p => !q || (p.name + p.cat).toLowerCase().includes(q)).sort((a, b) => (a.name || '').localeCompare(b.name || ''));
+  const q = pSearch.toLowerCase(), list = D.products.filter(p => PF[pFilter](p) && (!q || (p.name + p.cat).toLowerCase().includes(q))).sort((a, b) => (a.movedAt || 0) - (b.movedAt || 0) || (a.name || '').localeCompare(b.name || ''));
   const rvCount = {}; D.reviews.forEach(r => { if (r.pid) rvCount[r.pid] = (rvCount[r.pid] || 0) + 1; });
   const cards = list.map(p => `<div class="card overflow-hidden ${p.active === false ? 'opacity-50' : ''}">
-    <img src="${esc(p.images?.[0] || '')}" class="w-full aspect-[4/5] object-cover bg-gray-100" alt="" loading="lazy" decoding="async">
+    <div class="relative"><img src="${esc(p.images?.[0] || '')}" class="w-full aspect-[4/5] object-cover bg-gray-100" alt="" loading="lazy" decoding="async">
+    <div class="absolute top-1.5 left-1.5 flex flex-col gap-1 items-start">${isLG(p) ? '<span class="px-2 py-0.5 rounded-full text-[11px] font-bold bg-blue-600 text-white">Ladyglamour</span>' : ''}${p.edited ? '<span class="px-2 py-0.5 rounded-full text-[11px] font-bold bg-green-600 text-white">✏️ এডিটেড</span>' : ''}</div></div>
     <div class="p-3 text-sm"><p class="font-semibold leading-snug min-h-[2.6rem]">${esc(p.name)}</p>
     ${p.brand ? `<p class="text-xs text-black/60">ব্র্যান্ড: <b>${esc(p.brand)}</b></p>` : ''}
     <p class="mt-1"><b>${tk(p.offer)}</b> <s class="text-black/40">${tk(p.regular)}</s></p>
     <p class="text-xs ${+p.stock <= 5 ? 'red font-bold' : 'text-black/60'}">স্টক: ${bn(+p.stock || 0)}${p.active === false ? ' · লুকানো' : ''}</p>
     <p class="text-xs mt-0.5 text-black/60">${secOf(p).length ? 'সেকশন: ' + SECTIONS.filter(s => secOf(p).includes(s[0])).map(s => s[2]).join(' · ') : 'সেকশন: নেই (More Products এ দেখাবে)'}</p>
-    <div class="flex gap-2 mt-2"><button class="btn2 flex-1" data-act="pedit" data-id="${p.id}">এডিট</button><button class="btn2" data-act="rvnewp" data-id="${p.id}" aria-label="এই প্রোডাক্টে রিভিউ যোগ করুন">⭐ ${bn(rvCount[p.id] || 0)}</button><button class="btn2" data-act="plink" data-id="${p.id}" aria-label="প্রোডাক্টের লিংক কপি">🔗</button><button class="btn2 red" data-act="pdel" data-id="${p.id}">✕</button></div></div></div>`).join('');
+    <div class="flex gap-2 mt-2"><button class="btn2 flex-1" data-act="pedit" data-id="${p.id}">এডিট</button>${p.edited ? `<button class="btn2" data-act="punmark" data-id="${p.id}" aria-label="এডিটেড চিহ্ন সরান" title="এডিটেড চিহ্ন সরান">↩</button>` : ''}<button class="btn2" data-act="rvnewp" data-id="${p.id}" aria-label="এই প্রোডাক্টে রিভিউ যোগ করুন">⭐ ${bn(rvCount[p.id] || 0)}</button><button class="btn2" data-act="plink" data-id="${p.id}" aria-label="প্রোডাক্টের লিংক কপি">🔗</button><button class="btn2 red" data-act="pdel" data-id="${p.id}">✕</button></div></div></div>`).join('');
   if (onlyList) return cards;
+  const pc = k => D.products.filter(PF[k]).length, unmarked = D.products.filter(p => isLG(p) && p.source !== 'ladyglamour').length;
   return `<div class="flex gap-2 mb-3"><input class="inp" placeholder="প্রোডাক্ট খুঁজুন…" value="${esc(pSearch)}" data-in="psearch"><button class="btn shrink-0" data-act="pnew">+ নতুন</button></div>
+  <div class="flex gap-2 overflow-x-auto mb-2 text-sm">${PFN.map(([k, n]) => `<button data-act="pfilter" data-v="${k}" class="tab shrink-0 px-3 py-1.5 rounded-full border bg-white ${pFilter === k ? 'on' : ''}">${n} (${bn(pc(k))})</button>`).join('')}</div>
+  <p class="text-xs text-black/60 mb-3">এডিট করলে প্রোডাক্টে ✏️ চিহ্ন বসে। এডিটের সময় নতুন ছবি দিলে প্রোডাক্টটি তালিকার একদম শেষে চলে যায় (এই তালিকায়; ওয়েবসাইটের ক্রম বদলায় না), ফলে উপরে শুধু বাকি কাজগুলো থাকে।${unmarked ? ` <button class="underline font-semibold" data-act="lgmark">🏷 ${bn(unmarked)}টি Ladyglamour প্রোডাক্টে স্থায়ী চিহ্ন বসান</button> (ছবি নিজের Cloudinary-তে আনার পরেও আলাদা থাকবে)` : ''}</p>
   <div class="card p-4 mb-3 text-sm"><p class="font-semibold">📒 Meta (Facebook) ক্যাটালগ CSV</p>
   <p class="text-xs text-black/60 mt-1">সক্রিয়, স্টকে থাকা ও ছবিসহ প্রোডাক্টের তালিকা Meta Commerce Manager-এ আপলোডের ফরম্যাটে নামবে। প্রতিটা প্রোডাক্টের লিংক হবে <span dir="ltr">${esc(location.origin)}/#p=আইডি</span></p>
   <div class="mt-2"><button class="btn2" data-act="catalogcsv">⬇ ক্যাটালগ CSV নামান</button></div></div>
@@ -385,7 +393,7 @@ function vSettings() {
 
 /* ---------- Modals ---------- */
 function productForm(p) {
-  form = { id: p?.id, images: [...(p?.images || [])] };
+  form = { id: p?.id, images: [...(p?.images || [])], orig: [...(p?.images || [])] };
   const cats = [...new Set([...allCats(), ...D.products.map(x => x.cat).filter(Boolean)])];
   openModal(`<h2 class="font-bold text-lg mb-3">${p ? 'প্রোডাক্ট এডিট' : 'নতুন প্রোডাক্ট'}</h2><div class="grid grid-cols-2 gap-3">
     <label class="col-span-2 text-sm font-semibold">নাম <span class="text-xs font-normal text-black/50">(ব্র্যান্ডের নাম সহ লিখুন, যেমন: Centella Serum — ব্র্যান্ড নিজে থেকে বসে যাবে)</span><input id="fName" data-in="pname" class="inp mt-1 font-normal" value="${esc(p?.name)}"></label>
@@ -506,6 +514,7 @@ const impData = it => {
     const offer = +p.offer || 0, cat = it.cats.size ? [...it.cats][0] : String(p.cat ?? p.category ?? '').trim();
     Object.assign(d, { name: it.name, cat, brand: canonBrand(p.brand) || detectBrand(it.name), regular: +p.regular || offer, offer, stock: has('stock') ? +p.stock || 0 : 50, desc: String(p.desc ?? p.description ?? '').trim(), active: p.active !== false, images: imgs });
     d.featCats = cats.length ? cats : (cat ? [cat] : []);
+    if (imgs.some(x => /ladyglamourwh\.com/i.test(String(x)))) d.source = 'ladyglamour';
     if (Array.isArray(p.variants)) { d.variants = cleanVariants(p.variants); if (d.variants.length) { const m = d.variants.reduce((a, b) => b.offer < a.offer ? b : a); d.offer = m.offer; d.regular = m.regular; } } if (Array.isArray(p.shades)) { const sh = cleanShades(p.shades); if (sh.length) d.shades = sh; }
     Object.assign(d, secFields(Array.isArray(p.sections) ? p.sections : p.bestSeller ? ['best'] : (p.group === 'sandalwood' || p.group === 'bamboo') ? [p.group] : []));
     return d;
@@ -679,7 +688,7 @@ async function migrateExternal() {
       if (!isExt(src)) { imgs.push(src); continue; }
       try { imgs.push(await uploadCld(src)); ok++; changed = true; } catch (e) { fail++; err = e.message; imgs.push(src); }
     }
-    if (changed) { try { await updateDoc(doc(db, 'products', p.id), { images: imgs }); } catch (e) { err = e.code || e.message; } }
+    if (changed) { try { await updateDoc(doc(db, 'products', p.id), { images: imgs, ...(isLG(p) ? { source: 'ladyglamour' } : {}) }); } catch (e) { err = e.code || e.message; } }
     toast('ছবি আনা হচ্ছে… ' + bn(++n) + '/' + bn(todo.length));
   }
   toast(bn(ok) + 'টি ছবি এসেছে ✅' + (fail ? ` · ${bn(fail)}টি আনা যায়নি (${err})` : ''), 6000);
@@ -867,6 +876,9 @@ const A = {
     const k = b.dataset.cat; $('#fCat').value = k;
     const cb = [...document.querySelectorAll('[data-catchk]')].find(x => x.dataset.catchk === k); if (cb) cb.checked = true;
   },
+  pfilter: b => { pFilter = b.dataset.v; render(); },
+  punmark: async b => { try { await updateDoc(doc(db, 'products', b.dataset.id), { edited: false, movedAt: 0 }); toast('চিহ্ন সরানো হয়েছে'); } catch (e) { toast('হয়নি: ' + e.code); } },
+  lgmark: async () => { const todo = D.products.filter(p => isLG(p) && p.source !== 'ladyglamour'); if (!todo.length) return; try { for (let i = 0; i < todo.length; i += 400) { const bt = writeBatch(db); todo.slice(i, i + 400).forEach(p => bt.update(doc(db, 'products', p.id), { source: 'ladyglamour' })); await bt.commit(); } toast('🏷 ' + bn(todo.length) + 'টি প্রোডাক্টে চিহ্ন বসেছে ✅'); } catch (e) { toast('হয়নি: ' + e.code); } },
   rmimg: b => { form.images.splice(+b.dataset.i, 1); drawImgs(); },
   mainimg: b => { const [x] = form.images.splice(+b.dataset.i, 1); form.images.unshift(x); drawImgs(); },
   psave: async () => { try {
@@ -880,7 +892,9 @@ const A = {
     if (!d.name || !d.offer) return toast('নাম ও অফার দাম দিন');
     if (!d.regular) d.regular = d.offer;
     if (d.images.join('').length > 950000) return toast('ছবির সাইজ বেশি, কয়েকটি ছবি বাদ দিন');
-    try { form.id ? await updateDoc(doc(db, 'products', form.id), clean(d)) : await addDoc(collection(db, 'products'), { ...clean(d), createdAt: serverTimestamp() }); closeModal(); toast('সেভ হয়েছে ✅'); } catch (e) { console.error(e); toast('সেভ হয়নি: ' + (e.code || e.message || e)); }
+    let moved = false;
+    if (form.id) { d.edited = true; d.editedAt = Date.now(); const old = D.products.find(x => x.id === form.id); if (old && isLG(old) && old.source !== 'ladyglamour') d.source = 'ladyglamour'; if (d.images.some(x => !(form.orig || []).includes(x))) { d.movedAt = Date.now(); moved = true; } }
+    try { form.id ? await updateDoc(doc(db, 'products', form.id), clean(d)) : await addDoc(collection(db, 'products'), { ...clean(d), createdAt: serverTimestamp() }); closeModal(); toast(moved ? 'সেভ হয়েছে ✅ — প্রোডাক্টটি তালিকার শেষে গেছে' : 'সেভ হয়েছে ✅'); } catch (e) { console.error(e); toast('সেভ হয়নি: ' + (e.code || e.message || e)); }
   } catch (e) { console.error(e); toast('সেভ হয়নি: ' + (e.code || e.message || e)); } },
   syncnow: () => { if (!firstLoad.products) return toast('ডাটা লোড হচ্ছে, একটু পরে চেষ্টা করুন'); syncCatalog(true); },
   migimgs: migrateImages,
