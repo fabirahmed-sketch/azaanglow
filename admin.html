@@ -125,7 +125,7 @@ async function uploadCld(file) {
   const fd = new FormData(); fd.append('file', await toBlob(file)); fd.append('upload_preset', CLD.preset);
   const res = await fetch(`https://api.cloudinary.com/v1_1/${CLD.cloud}/image/upload`, { method: 'POST', body: fd });
   const j = await res.json(); if (!res.ok || !j.secure_url) throw new Error(j.error?.message || 'upload failed');
-  return j.secure_url.replace('/upload/', '/upload/f_auto,q_auto,w_800/');
+  return j.secure_url;   // কোনো রূপান্তর (w_800/f_auto) নয়: ওটা ছোট ছবি বড় করে ফেলত, ফাইল ৫০KB ছাড়াত
 }
 
 /* ---------- Modal ---------- */
