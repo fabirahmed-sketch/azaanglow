@@ -550,6 +550,11 @@ src="https://www.facebook.com/tr?id=2030629185007983&ev=PageView&noscript=1"
 </aside>
 
 <!-- Quick view modal -->
+<!-- Floating cart (ডান পাশের মাঝখানে) -->
+<button id="floatCart" type="button" aria-label="Open cart" class="fixed right-0 top-1/2 -translate-y-1/2 z-40 w-[4.75rem] sm:w-24 rounded-l-xl overflow-hidden shadow-xl bg-white border border-r-0 border-black/10 text-center hover:brightness-95 transition">
+  <span class="block bg-leaf-500 text-ink py-2.5 px-1"><svg class="w-7 h-7 mx-auto" fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M6 7h12l1 13H5L6 7zM9 7a3 3 0 0 1 6 0"/></svg><span id="fcCount" class="block text-xs sm:text-sm font-bold mt-1">0 Items</span></span>
+  <span id="fcTotal" class="block py-2 px-1 text-sm sm:text-base font-extrabold text-leaf-800">0৳</span>
+</button>
 <div id="qvOverlay" class="fixed inset-0 bg-black/55 z-[55] hidden grid place-items-center p-4 overflow-y-auto">
   <div id="qvCard" class="modal-card relative bg-white rounded-3xl max-w-3xl w-full overflow-hidden shadow-2xl my-auto" role="dialog" aria-modal="true" aria-label="Product details"></div>
 
@@ -926,43 +931,50 @@ function renderProducts() {
 function renderQuick() {
   const p = byId(qvId); if (!p) return;
   const sv = hasVariants(p) && qvVariant ? vOf(p, qvVariant) : null, UP = sv ? { offer: sv.offer, regular: sv.regular || sv.offer } : { offer: p.offer, regular: p.regular }, d = Math.round((1 - UP.offer / UP.regular) * 100);
+  const gal = (p.imgs && p.imgs.length) ? p.imgs : [], vv0 = vOf(p, qvVariant), vIdx = vv0 && vv0.img && gal[vv0.img - 1] ? vv0.img - 1 : -1;
+  const ci = !gal.length ? -1 : (qvImg >= 0 && gal[qvImg]) ? qvImg : shImgIdx(p, qvShade) >= 0 ? shImgIdx(p, qvShade) : vIdx >= 0 ? vIdx : 0;
+  const mainSrc = (qvImg >= 0 && p.imgs && p.imgs[qvImg]) || (shImgIdx(p, qvShade) >= 0 && p.imgs[shImgIdx(p, qvShade)]) || vImg(p, qvVariant);
+  const arrow = (dir) => `<button type="button" data-qv${dir} class="absolute top-1/2 -translate-y-1/2 ${dir === 'prev' ? 'left-1.5' : 'right-1.5'} w-8 h-8 rounded-full bg-white/90 shadow grid place-items-center text-leaf-800 hover:bg-leaf-500 hover:text-ink transition" aria-label="${dir === 'prev' ? 'Previous image' : 'Next image'}"><svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="${dir === 'prev' ? 'M15 5l-7 7 7 7' : 'M9 5l7 7-7 7'}"/></svg></button>`;
   $('#qvCard').innerHTML = `
     <button data-qvclose class="absolute top-3 right-3 z-10 w-9 h-9 rounded-full bg-white shadow grid place-items-center hover:bg-leaf-100" aria-label="Close">✕</button>
     <div class="grid md:grid-cols-2">
-      <div class="relative bg-leaf-50">
-        <img src="${(qvImg >= 0 && p.imgs && p.imgs[qvImg]) || (shImgIdx(p, qvShade) >= 0 && p.imgs[shImgIdx(p, qvShade)]) || vImg(p, qvVariant)}" alt="${esc(p.name)}" class="w-full aspect-[4/5] md:h-full object-cover">
-        ${d > 0 ? `<span class="absolute top-3 left-3 px-3 py-1 rounded-full text-xs font-bold bg-leaf-500 text-ink shadow">-${d}%</span>` : ''}
-        ${p.imgs && p.imgs.length > 1 ? `<div class="absolute bottom-3 left-3 right-3 flex gap-2 overflow-x-auto pb-1">${p.imgs.map((u, i) => `<button type="button" data-qvthumb="${i}" class="shrink-0 w-12 h-14 rounded-lg overflow-hidden border-2 bg-white ${((qvImg >= 0 ? qvImg : shImgIdx(p, qvShade)) === i) ? 'border-ink' : 'border-white/80'} shadow"><img src="${u}" alt="" loading="lazy" class="w-full h-full object-cover"></button>`).join('')}</div>` : ''}
+      <div class="p-3 sm:p-5 bg-white flex gap-2 sm:gap-3 items-start">
+        ${gal.length > 1 ? `<div class="no-scrollbar flex flex-col gap-2 w-14 sm:w-[4.5rem] shrink-0 max-h-[19rem] sm:max-h-[26rem] overflow-y-auto">${gal.map((u, i) => `<button type="button" data-qvthumb="${i}" aria-label="Image ${i + 1}" class="relative shrink-0 w-full aspect-square rounded-lg overflow-hidden border-2 bg-white transition ${ci === i ? 'border-leaf-600' : 'border-black/10 hover:border-leaf-300'}"><img src="${u}" alt="" loading="lazy" class="w-full h-full object-contain">${ci === i ? '<span class="absolute inset-0 grid place-items-center pointer-events-none"><span class="w-5 h-5 rounded-full bg-leaf-600 text-white grid place-items-center"><svg class="w-3 h-3" fill="none" stroke="currentColor" stroke-width="3.5" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7"/></svg></span></span>' : ''}</button>`).join('')}</div>` : ''}
+        <div class="relative flex-1 min-w-0 aspect-square rounded-xl border border-black/10 bg-white overflow-hidden">
+          <img src="${mainSrc}" alt="${esc(p.name)}" class="w-full h-full object-contain">
+          ${gal.length > 1 ? arrow('prev') + arrow('next') : ''}
+        </div>
       </div>
       <div class="p-6 sm:p-8 flex flex-col">
         <p class="text-xs text-leaf-700 font-bold uppercase tracking-wide">${p.cat}</p>
         <h3 class="font-display text-xl sm:text-2xl font-extrabold mt-1 leading-snug pr-8">${esc(p.name)}</h3>
         <div class="mt-4 flex items-baseline gap-3">
-          <span class="text-3xl font-extrabold">${hasVariants(p) && !sv ? '<span class="text-base font-semibold text-black/55">থেকে </span>' : ''}${taka(UP.offer)}</span>
-          ${d > 0 ? `<span class="text-base text-black/40 line-through">${taka(UP.regular)}</span>` : ''}
+          <span class="text-3xl font-extrabold text-leaf-800">${hasVariants(p) && !sv ? '<span class="text-base font-semibold text-black/55">থেকে </span>' : ''}${taka(UP.offer)}</span>
+          ${d > 0 ? `<span class="text-base text-black/40 line-through">${taka(UP.regular)}</span><span class="px-2.5 py-1 rounded-md text-xs font-bold bg-leaf-500 text-ink">Save ${d}%</span>` : ''}
         </div>
-        ${d > 0 ? `<p class="text-sm text-leaf-800 font-semibold mt-1">You save ${taka(UP.regular - UP.offer)} (${d}%)</p>` : ''}
-        <p class="text-sm text-black/65 mt-4 leading-relaxed">${esc(p.desc)}</p>
         ${hasVariants(p) ? `<div class="mt-4"><p class="text-sm font-bold">সাইজ / ml বেছে নিন <span class="text-red-600">*</span>${qvVariant ? `<span class="font-medium text-leaf-800"> — ${esc(qvVariant)}</span>` : ''}</p>
           <div class="mt-2 flex flex-wrap gap-2">${p.variants.map((v, i) => `<button type="button" data-qvvariant="${i}" aria-pressed="${qvVariant === v.name}" class="px-3.5 py-2 rounded-xl border text-sm font-semibold transition text-left ${qvVariant === v.name ? 'bg-ink text-white border-ink' : 'bg-white border-black/20 hover:border-ink'}">${esc(v.name)}<span class="block text-xs font-bold ${qvVariant === v.name ? 'text-white/80' : 'text-leaf-800'}">${taka(v.offer)}${(v.regular || v.offer) > v.offer ? ` <s class="font-normal opacity-60">${taka(v.regular)}</s>` : ''}</span></button>`).join('')}</div></div>` : ''}
         ${hasShades(p) ? `<div class="mt-4"><p class="text-sm font-bold">শেড বেছে নিন <span class="text-red-600">*</span>${qvShade ? `<span class="font-medium text-leaf-800"> — ${esc(qvShade)}</span>` : ''}</p>
           <div class="mt-2 flex flex-wrap gap-2">${p.shades.map((sh, i) => `<button type="button" data-qvshade="${i}" aria-pressed="${qvShade === sh.name}" class="inline-flex items-center gap-2 px-3 py-2 rounded-full border text-sm font-semibold transition ${qvShade === sh.name ? 'bg-ink text-white border-ink' : 'bg-white border-black/20 hover:border-ink'}">${sh.color ? `<span class="w-4 h-4 rounded-full border border-black/20 shrink-0" style="background:${esc(sh.color)}"></span>` : ''}${esc(sh.name)}</button>`).join('')}</div></div>` : ''}
-        <ul class="mt-4 text-sm text-black/65 space-y-1.5">
+        <div class="mt-6 flex items-center gap-3 border-t border-black/10 pt-5">
+          <span class="font-semibold text-base">Quantity:</span>
+          <div class="inline-flex items-center border border-black/20 rounded-lg p-1 gap-1">
+            <button data-qvminus class="w-9 h-9 rounded-full bg-black/5 grid place-items-center text-lg hover:bg-leaf-100" aria-label="Decrease quantity">−</button>
+            <span class="w-10 text-center font-bold text-lg">${qvQty}</span>
+            <button data-qvplus class="w-9 h-9 rounded-full bg-black/5 grid place-items-center text-lg hover:bg-leaf-100" aria-label="Increase quantity">+</button>
+          </div>
+          <button data-qvwish class="ml-auto w-11 h-11 rounded-full border border-black/15 grid place-items-center hover:border-ink" aria-label="Toggle wishlist">${heartSvg(wish.has(p.id), 'w-5 h-5')}</button>
+        </div>
+        <div class="mt-4 grid grid-cols-2 gap-3">
+          <button data-qvadd class="py-3.5 rounded-lg bg-leaf-500 hover:bg-ink hover:text-white text-ink font-bold transition text-sm sm:text-base inline-flex items-center justify-center gap-2"><svg class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M6 7h12l1 13H5L6 7zM9 7a3 3 0 0 1 6 0"/></svg>ADD TO CART</button>
+          <button data-qvbuy class="py-3.5 rounded-lg bg-ink hover:bg-leaf-500 text-white hover:text-ink font-bold transition text-sm sm:text-base">BUY NOW</button>
+        </div>
+        <button data-qvwa class="mt-3 w-full py-3.5 rounded-lg bg-[#1fa855] hover:brightness-110 text-white font-bold transition text-sm sm:text-base inline-flex items-center justify-center gap-2"><svg class="w-6 h-6" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2.5a9.5 9.5 0 0 0-8.2 14.3L2.5 21.5l4.8-1.2A9.5 9.5 0 1 0 12 2.5z"/><path transform="translate(6.2 6.2) scale(.5)" d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7A2 2 0 0 1 22 16.92z"/></svg>Order on WhatsApp</button>
+        <ul class="mt-5 text-sm text-black/65 space-y-1.5">
           <li>✔ 100% authentic, checked before dispatch</li>
           <li>✔ Cash on Delivery available</li>
         </ul>
-        <div class="mt-6 flex items-center gap-3">
-          <div class="inline-flex items-center border border-black/15 rounded-full">
-            <button data-qvminus class="w-10 h-11 grid place-items-center text-lg hover:text-leaf-700" aria-label="Decrease quantity">−</button>
-            <span class="w-8 text-center font-semibold">${qvQty}</span>
-            <button data-qvplus class="w-10 h-11 grid place-items-center text-lg hover:text-leaf-700" aria-label="Increase quantity">+</button>
-          </div>
-          <button data-qvwish class="w-11 h-11 rounded-full border border-black/15 grid place-items-center hover:border-ink" aria-label="Toggle wishlist">${heartSvg(wish.has(p.id), 'w-5 h-5')}</button>
-        </div>
-        <div class="mt-4 grid grid-cols-2 gap-3">
-          <button data-qvadd class="py-3.5 rounded-full bg-leaf-500 hover:bg-ink hover:text-white text-ink font-bold transition text-sm sm:text-base">Add to Cart · ${taka(UP.offer * qvQty)}</button>
-          <button data-qvbuy class="py-3.5 rounded-full bg-ink hover:bg-leaf-500 text-white hover:text-ink font-bold transition text-sm sm:text-base">Buy Now</button>
-        </div>
+        <p class="text-sm text-black/65 mt-4 leading-relaxed whitespace-pre-line">${esc(p.desc)}</p>
         <div id="qvRev" data-pid="${esc(p.fid || '')}" class="mt-6 pt-4 border-t border-black/10"></div>
       </div>
     </div>`;
@@ -1112,6 +1124,7 @@ function renderCart() {
   const t = totals();
   $('#cartCount').textContent = t.count;
   $('#cartTotalMini').textContent = taka(t.sub);
+  $('#fcCount').textContent = t.count + (t.count === 1 ? ' Item' : ' Items'); $('#fcTotal').textContent = taka(t.sub);
   $('#wishCount').textContent = wish.size;
   $('#cartSubtotal').textContent = taka(t.sub);
   $('#cartSavedVal').textContent = taka(t.saved);
@@ -1590,6 +1603,18 @@ document.addEventListener('click', (e) => {
   if (e.target.closest('[data-qvwish]')) { toggleWish(qvId); return renderQuick(); }
   const shBtn = e.target.closest('[data-qvshade]');
   if (shBtn) { const sh = (byId(qvId).shades || [])[+shBtn.dataset.qvshade]; qvShade = sh ? sh.name : ''; qvImg = -1; return renderQuick(); }
+  const gBtn = e.target.closest('[data-qvprev],[data-qvnext]');
+  if (gBtn) { const g = byId(qvId).imgs || [], n = g.length; if (n > 1) { const sh = shImgIdx(byId(qvId), qvShade), vv = vOf(byId(qvId), qvVariant), cur = qvImg >= 0 ? qvImg : sh >= 0 ? sh : (vv && vv.img && g[vv.img - 1] ? vv.img - 1 : 0); qvImg = (cur + (gBtn.hasAttribute('data-qvprev') ? -1 : 1) + n) % n; } return renderQuick(); }
+  if (e.target.closest('[data-qvwa]')) {
+    const p = byId(qvId);
+    if (hasVariants(p) && !qvVariant) return toast('আগে সাইজ / ml বেছে নিন 📏');
+    if (hasShades(p) && !qvShade) return toast('আগে একটি শেড বেছে নিন 🎨');
+    const U = unitOf(p, qvVariant);
+    const msg = ['আসসালামু আলাইকুম, আমি Azaan ওয়েবসাইট থেকে এই প্রোডাক্টটি অর্ডার করতে চাই:', '', 'প্রোডাক্ট: ' + p.name, qvVariant ? 'সাইজ / ml: ' + qvVariant : '', qvShade ? 'শেড: ' + qvShade : '', 'পরিমাণ: ' + qvQty, 'দাম: ' + taka(U.offer) + ' × ' + qvQty + ' = ' + taka(U.offer * qvQty), 'লিংক: ' + location.origin + location.pathname + '#p=' + p.id].filter((x, i) => x !== '' || i === 1).join('\n');
+    try { fbTrack('Contact', { content_name: p.name }); } catch (er) {}
+    window.open('https://wa.me/' + SHOP.whatsapp + '?text=' + encodeURIComponent(msg), '_blank', 'noopener');
+    return;
+  }
   const thBtn = e.target.closest('[data-qvthumb]');
   if (thBtn) { qvImg = +thBtn.dataset.qvthumb; return renderQuick(); }
   const vaBtn = e.target.closest('[data-qvvariant]');
@@ -1601,6 +1626,8 @@ document.addEventListener('click', (e) => {
     if (e.target.closest('[data-qvbuy]')) { closeQuick(); closeCart(); location.hash = '#checkout'; return; }
     closeQuick(); return openCart();
   }
+
+  if (e.target.closest('#floatCart')) return openCart();
 
   const inc = e.target.closest('[data-inc]');
   if (inc) { cart[inc.dataset.inc]++; return renderCart(); }

@@ -91,15 +91,38 @@ const fileToData = (f, max = 900, q = .8) => new Promise((ok, no) => {
   r.onerror = no; r.readAsDataURL(f);
 });
 
+/* ---------- ছবি কমপ্রেস: ব্যানার ছাড়া সব ছবি (আপলোড ও ডাউনলোড) ৫০KB এর মধ্যে ---------- */
+const IMG_MAX = 50000;   // ৫০KB (১০০০ বা ১০২৪ যেভাবেই গুনুন, এর নিচে)
+const jpegAt = (c, q) => new Promise(r => c.toBlob(b => r(b), 'image/jpeg', q));
+async function compress50(input) {
+  const src = input instanceof Blob ? input : await (await fetch(input)).blob();
+  if (src.size <= IMG_MAX && /^image\/(jpeg|png|webp)$/.test(src.type)) return src;   // আগে থেকেই ছোট হলে অরিজিনালই থাকবে
+  const url = URL.createObjectURL(src);
+  try {
+    const im = await new Promise((ok, no) => { const i = new Image(); i.onload = () => ok(i); i.onerror = () => no(new Error('ছবি পড়া যায়নি')); i.src = url; });
+    const W = im.naturalWidth, H = im.naturalHeight; let best = null, lastW = 0;
+    for (const m of [1200, 1000, 850, 720, 600, 500, 420, 360, 300]) {       // আগে বড় মাপে সর্বোচ্চ কোয়ালিটি খোঁজা হয়, না মিললে মাপ কমে
+      const k = Math.min(1, m / Math.max(W, H)), w = Math.max(1, Math.round(W * k)), h = Math.max(1, Math.round(H * k));
+      if (w === lastW) continue; lastW = w;
+      const c = document.createElement('canvas'); c.width = w; c.height = h;
+      const g = c.getContext('2d'); g.fillStyle = '#fff'; g.fillRect(0, 0, w, h); g.imageSmoothingQuality = 'high'; g.drawImage(im, 0, 0, w, h);
+      const top = await jpegAt(c, .92); if (top && top.size <= IMG_MAX) return top;
+      let lo = .3, hi = .92, ok = null;
+      for (let i = 0; i < 7; i++) { const q = (lo + hi) / 2, b = await jpegAt(c, q); if (b && b.size <= IMG_MAX) { ok = { b, q }; lo = q; } else hi = q; }
+      if (ok) { best = ok.b; if (ok.q >= .6) return ok.b; }
+    }
+    if (best) return best;
+    throw new Error('৫০KB এর মধ্যে আনা যায়নি');
+  } finally { URL.revokeObjectURL(url); }
+}
+const blobToData = b => new Promise((ok, no) => { const r = new FileReader(); r.onload = () => ok(r.result); r.onerror = no; r.readAsDataURL(b); });
+const fileTo50 = async f => blobToData(await compress50(f));
+
 /* ---------- Cloudinary ছবি আপলোড (ছবি Cloudinary তে থাকে, ডাটাবেসে শুধু লিংক) ---------- */
 const CLD = { cloud: 'vapfnr6g', preset: 'azaan_products' };
-const toBlob = (f, max = 1200, q = .85) => new Promise((ok, no) => {
-  const r = new FileReader();
-  r.onload = () => { const im = new Image(); im.onload = () => { const k = Math.min(1, max / Math.max(im.width, im.height)), c = document.createElement('canvas'); c.width = Math.round(im.width * k); c.height = Math.round(im.height * k); c.getContext('2d').drawImage(im, 0, 0, c.width, c.height); c.toBlob(b => b ? ok(b) : no(new Error('blob')), 'image/jpeg', q); }; im.onerror = no; im.src = r.result; };
-  r.onerror = no; r.readAsDataURL(f);
-});
+const toBlob = f => compress50(f);
 async function uploadCld(file) {
-  const fd = new FormData(); fd.append('file', typeof file === 'string' ? file : await toBlob(file)); fd.append('upload_preset', CLD.preset);
+  const fd = new FormData(); fd.append('file', await toBlob(file)); fd.append('upload_preset', CLD.preset);
   const res = await fetch(`https://api.cloudinary.com/v1_1/${CLD.cloud}/image/upload`, { method: 'POST', body: fd });
   const j = await res.json(); if (!res.ok || !j.secure_url) throw new Error(j.error?.message || 'upload failed');
   return j.secure_url.replace('/upload/', '/upload/f_auto,q_auto,w_800/');
@@ -815,10 +838,10 @@ const A = {
     for (let i = 0; i < imgs.length; i++) {
       const src = imgs[i]; let obj = '';
       try {
-        let url = src;
-        if (!isData(src)) { const r = await fetch(src); if (!r.ok) throw new Error('x'); obj = url = URL.createObjectURL(await r.blob()); }
-        const m = src.match(/^data:image\/(\w+)/) || src.match(/\.(jpe?g|png|webp|gif)(\?|$)/i);
-        const ext = ((m && m[1]) || 'jpg').toLowerCase().replace('jpeg', 'jpg');
+        const r = await fetch(src); if (!r.ok) throw new Error('x');
+        const blob = await compress50(await r.blob());                       // ডাউনলোডেও ৫০KB এর মধ্যে
+        const url = obj = URL.createObjectURL(blob);
+        const ext = /png/.test(blob.type) ? 'png' : /webp/.test(blob.type) ? 'webp' : 'jpg';
         const el = document.createElement('a'); el.href = url; el.download = String(p.name || 'product').replace(/[^\w-]+/g, '_').slice(0, 40) + '-' + (i + 1) + '.' + ext; document.body.appendChild(el); el.click(); el.remove();
         if (obj) setTimeout(() => URL.revokeObjectURL(obj), 3000);
         ok++; await new Promise(r => setTimeout(r, 300));
@@ -1028,10 +1051,10 @@ document.addEventListener('change', async e => {
     drawImgs();
     toast(fail ? (ok ? bn(ok) + 'টি হয়েছে, বাকিগুলো হয়নি: ' : 'আপলোড হয়নি: ') + fail : bn(ok) + 'টি ছবি আপলোড হয়েছে ✅ (এখন "সেভ করুন" চাপুন)');
   }
-  if (k === 'offimg') { const o = getOff(); for (const f of t.files) { if (o.sec.images.length >= 3) break; try { o.sec.images.push(await fileToData(f, 700, .8)); } catch { toast('ছবি পড়া যায়নি'); } } t.value = ''; render(); }
+  if (k === 'offimg') { const o = getOff(); for (const f of t.files) { if (o.sec.images.length >= 3) break; try { o.sec.images.push(await fileTo50(f)); } catch { toast('ছবি পড়া যায়নি'); } } t.value = ''; render(); }
   if (k === 'badgeimg' && t.files[0]) { try { getOff().badge.image = await fileToPng(t.files[0]); } catch { toast('ছবি পড়া যায়নি'); } t.value = ''; render(); }
   if (k === 'banner' && t.files[0]) { toast('আপলোড হচ্ছে…'); try { await addDoc(collection(db, 'banners'), { image: await fileToData(t.files[0], 1400, .8), link: '', active: true, createdAt: serverTimestamp() }); toast('ব্যানার যোগ হয়েছে ✅'); } catch (er) { toast('আপলোড হয়নি: ' + er.code); } }
-  if (k === 'popup' && t.files[0]) { toast('আপলোড হচ্ছে…'); try { await addDoc(collection(db, 'banners'), { image: await fileToData(t.files[0], 1000, .82), kind: 'popup', link: '', active: true, createdAt: serverTimestamp() }); toast('পপআপ এড যোগ হয়েছে ✅'); } catch (er) { toast('আপলোড হয়নি: ' + er.code); } }
+  if (k === 'popup' && t.files[0]) { toast('আপলোড হচ্ছে…'); try { await addDoc(collection(db, 'banners'), { image: await fileTo50(t.files[0]), kind: 'popup', link: '', active: true, createdAt: serverTimestamp() }); toast('পপআপ এড যোগ হয়েছে ✅'); } catch (er) { toast('আপলোড হয়নি: ' + er.code); } }
   if (k === 'blink') updateDoc(doc(db, 'banners', t.dataset.id), { link: t.value.trim() });
   if (k === 'brandlogo' && t.files[0]) { const f = t.files[0], nm = t.dataset.brand; t.value = ''; toast('লোগো আপলোড হচ্ছে…'); try { const url = await uploadCld(f); await saveBrands(brandCfg().map(x => x.name === nm ? { ...x, logo: url } : x)); } catch (er) { toast('আপলোড হয়নি: ' + (er.message || er.code)); } }
   if (k === 'caticon' && t.files[0]) { const f = t.files[0], nm = t.dataset.cat; t.value = ''; toast('আইকন আপলোড হচ্ছে…'); try { const url = await uploadCld(f); await catPatch(nm, { icon: url }); } catch (er) { toast('আপলোড হয়নি: ' + (er.message || er.code)); } }
