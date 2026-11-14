@@ -59,7 +59,7 @@ const badge = s => `<span class="px-2 py-0.5 rounded-full text-xs font-bold ${ST
 const TABS = [['dash','ড্যাশবোর্ড'],['products','প্রোডাক্ট'],['sections','ফিচারড সেকশন ও ক্যাটাগরি'],['home','হোমপেজ সেকশন'],['brands','ব্র্যান্ড'],['orders','অর্ডার'],['reviews','রিভিউ'],['customers','কাস্টমার'],['promos','প্রমো কোড'],['banners','ব্যানার'],['offers','অফার আইকন'],['popups','পপআপ এড'],['settings','সেটিংস']];
 
 const D = { products:[], orders:[], reviews:[], promos:[], banners:[], settings:{} };
-let tab = 'dash', oFilter = 'all', oSearch = '', pSearch = '', pFilter = 'all', secQ = {}, autoBusy = false, form = {}, soundOn = false, firstLoad = {}, unsubs = [];
+let tab = 'dash', oFilter = 'all', oSearch = '', pSearch = '', pShow = 30, pFilter = 'all', secQ = {}, autoBusy = false, form = {}, soundOn = false, firstLoad = {}, unsubs = [];
 
 /* ---------- Auth ---------- */
 $('#loginForm').addEventListener('submit', async e => {
@@ -127,6 +127,30 @@ async function uploadCld(file) {
   const j = await res.json(); if (!res.ok || !j.secure_url) throw new Error(j.error?.message || 'upload failed');
   return j.secure_url;   // কোনো রূপান্তর (w_800/f_auto) নয়: ওটা ছোট ছবি বড় করে ফেলত, ফাইল ৫০KB ছাড়াত
 }
+
+/* ---------- নতুন ছবি আপলোড: ImageKit-এ (সার্ভার-ফাংশন /api/upload দিয়ে); না হলে Cloudinary-তে ---------- */
+async function uploadIK(file) {
+  const data = await blobToData(await compress50(file));
+  const tk = await auth.currentUser.getIdToken();
+  const res = await fetch('/api/upload', { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + tk }, body: JSON.stringify({ file: data, fileName: 'azaan-' + Date.now() + '.jpg' }) });
+  const j = await res.json().catch(() => ({}));
+  if (!res.ok || !j.url) throw new Error(j.error || 'upload failed');
+  return j.url;
+}
+async function uploadImg(file) {
+  try { return await uploadIK(file); }
+  catch (e) { toast('ImageKit-এ হয়নি (' + (e.message || '') + ') — এবার Cloudinary-তে রাখা হলো'); return uploadCld(file); }
+}
+
+/* ---------- অ্যাডমিনে ছোট ছবি: ক্রেডিট/ব্যান্ডউইথ বাঁচাতে ছোট মাপের সংস্করণ + দরকারে লোড (lazy) ---------- */
+const th = (u, w) => {
+  u = String(u || '');
+  let m = u.match(/^(https:\/\/ik\.imagekit\.io\/[^?]+)(\?.*)?$/); if (m) return m[1] + '?tr=w-' + w;
+  m = u.match(/^(https:\/\/res\.cloudinary\.com\/[^/]+\/image\/upload\/)(.+)$/); if (!m) return u;
+  const sg = m[2].match(/^((?:[a-z]{1,3}_[^/,]*,?)+)\/(.+)$/);
+  if (sg) { let t = /(^|,)w_\d+/.test(sg[1]) ? sg[1].replace(/(^|,)w_\d+/, '$1w_' + w) : sg[1] + ',w_' + w; if (!/(^|,)c_/.test(t)) t += ',c_limit'; return m[1] + t + '/' + sg[2]; }
+  return m[1] + 'f_auto,q_auto,c_limit,w_' + w + '/' + m[2];
+};
 
 /* ---------- Modal ---------- */
 const openModal = h => { $('#modalBox').innerHTML = h; $('#modal').classList.remove('hidden'); };
@@ -202,8 +226,8 @@ function vSections() {
     const inS = D.products.filter(p => secOf(p).includes(k)).sort((x, y) => (x.name || '').localeCompare(y.name || ''));
     const out = D.products.filter(p => !secOf(p).includes(k)).sort((x, y) => (x.name || '').localeCompare(y.name || ''));
     return `<div class="card p-3"><div class="flex justify-between items-center mb-2 gap-2"><h3 class="font-bold">${n}</h3><span class="text-xs font-bold px-2 py-0.5 rounded-full bg-black/10 shrink-0">${bn(inS.length)}টি</span></div>
-    <div class="max-h-96 overflow-y-auto">${inS.map(p => `<div class="flex items-center gap-2 py-1.5 border-b"><img src="${esc(p.images?.[0] || '')}" class="w-10 h-12 object-cover rounded bg-gray-100 shrink-0" alt=""><div class="flex-1 min-w-0"><p class="text-sm leading-snug">${esc(p.name)}${k === 'best' && p.bestAuto ? ' <span class="text-xs">🔥 অটো</span>' : ''}</p>${hideNote(p) ? `<p class="text-xs red font-bold">সাইটে দেখাচ্ছে না: ${hideNote(p)}</p>` : ''}</div><button class="btn2 red shrink-0" data-act="secrm" data-id="${p.id}" data-sec="${k}" aria-label="সেকশন থেকে বাদ দিন">✕</button></div>`).join('') || '<p class="text-sm text-black/50 py-2">এই সেকশনে কোনো প্রোডাক্ট নেই</p>'}</div>
-    <div class="mt-3"><input class="inp" data-in="secq" data-sec="${k}" placeholder="🔍 নাম/ব্র্যান্ড লিখে প্রোডাক্ট খুঁজুন…" value="${esc(secQ[k] || '')}" autocomplete="off">${(secQ[k] || '').trim() ? (() => { const tk_ = secQ[k].toLowerCase().trim().split(/\s+/), m = out.filter(p => { const h = ((p.name || '') + ' ' + (p.brand || '') + ' ' + (p.cat || '')).toLowerCase(); return tk_.every(w => h.includes(w)); }).slice(0, 10); return `<div class="mt-2 border rounded-lg">${m.map(p => `<div class="flex items-center gap-2 p-1.5 border-b"><img src="${esc(p.images?.[0] || '')}" class="w-10 h-12 object-cover rounded bg-gray-100 shrink-0" alt=""><p class="flex-1 min-w-0 text-sm leading-snug">${esc(p.name)}</p><button class="btn shrink-0" data-act="secadd2" data-id="${p.id}" data-sec="${k}">+ যোগ</button></div>`).join('') || '<p class="text-xs text-black/50 p-2">কিছু পাওয়া যায়নি (বা আগে থেকেই এই সেকশনে আছে)</p>'}</div>`; })() : ''}</div></div>`;
+    <div class="max-h-96 overflow-y-auto">${inS.map(p => `<div class="flex items-center gap-2 py-1.5 border-b"><img src="${esc(th(p.images?.[0] || '', 120))}" loading="lazy" decoding="async" class="w-10 h-12 object-cover rounded bg-gray-100 shrink-0" alt=""><div class="flex-1 min-w-0"><p class="text-sm leading-snug">${esc(p.name)}${k === 'best' && p.bestAuto ? ' <span class="text-xs">🔥 অটো</span>' : ''}</p>${hideNote(p) ? `<p class="text-xs red font-bold">সাইটে দেখাচ্ছে না: ${hideNote(p)}</p>` : ''}</div><button class="btn2 red shrink-0" data-act="secrm" data-id="${p.id}" data-sec="${k}" aria-label="সেকশন থেকে বাদ দিন">✕</button></div>`).join('') || '<p class="text-sm text-black/50 py-2">এই সেকশনে কোনো প্রোডাক্ট নেই</p>'}</div>
+    <div class="mt-3"><input class="inp" data-in="secq" data-sec="${k}" placeholder="🔍 নাম/ব্র্যান্ড লিখে প্রোডাক্ট খুঁজুন…" value="${esc(secQ[k] || '')}" autocomplete="off">${(secQ[k] || '').trim() ? (() => { const tk_ = secQ[k].toLowerCase().trim().split(/\s+/), m = out.filter(p => { const h = ((p.name || '') + ' ' + (p.brand || '') + ' ' + (p.cat || '')).toLowerCase(); return tk_.every(w => h.includes(w)); }).slice(0, 10); return `<div class="mt-2 border rounded-lg">${m.map(p => `<div class="flex items-center gap-2 p-1.5 border-b"><img src="${esc(th(p.images?.[0] || '', 120))}" loading="lazy" decoding="async" class="w-10 h-12 object-cover rounded bg-gray-100 shrink-0" alt=""><p class="flex-1 min-w-0 text-sm leading-snug">${esc(p.name)}</p><button class="btn shrink-0" data-act="secadd2" data-id="${p.id}" data-sec="${k}">+ যোগ</button></div>`).join('') || '<p class="text-xs text-black/50 p-2">কিছু পাওয়া যায়নি (বা আগে থেকেই এই সেকশনে আছে)</p>'}</div>`; })() : ''}</div></div>`;
   }).join('')}</div>
   ${vCats()}`;
 }
@@ -234,8 +258,8 @@ function vHome() {
     <div class="flex gap-1.5 mb-2"><button class="btn2 !py-1 !px-2 text-xs" data-act="homeup" data-i="${i}">↑ ওপরে</button><button class="btn2 !py-1 !px-2 text-xs" data-act="homedown" data-i="${i}">↓ নিচে</button><button class="btn2 red !py-1 !px-2 text-xs" data-act="homerm" data-i="${i}">সেকশন সরান</button></div>
     <label class="text-xs font-semibold">সেকশনের নিচের ছোট লেখা<input class="inp mt-1 font-normal" data-in="homesub" data-i="${i}" maxlength="80" value="${esc(s.sub)}"></label>
     <p class="text-sm font-semibold mt-3 mb-1">সাজানো প্রোডাক্ট (ক্রম অনুযায়ী)</p>
-    <div class="max-h-96 overflow-y-auto">${s.pins.map((id, j) => { const p = byId(id); return `<div class="flex items-center gap-2 py-1.5 border-b"><input type="number" min="1" max="${s.pins.length}" value="${j + 1}" data-in="pinpos" data-i="${i}" data-j="${j}" class="inp !w-14 !px-1 !py-1 text-center shrink-0" aria-label="ক্রম নম্বর"><img src="${esc(p.images?.[0] || '')}" class="w-10 h-12 object-cover rounded bg-gray-100 shrink-0" alt=""><div class="flex-1 min-w-0"><p class="text-sm leading-snug">${esc(p.name)}</p>${hideNote(p) ? `<p class="text-xs red font-bold">সাইটে দেখাচ্ছে না: ${hideNote(p)}</p>` : ''}</div><button class="btn2 !py-1 !px-2 text-xs" data-act="pinup" data-i="${i}" data-j="${j}">↑</button><button class="btn2 !py-1 !px-2 text-xs" data-act="pindown" data-i="${i}" data-j="${j}">↓</button><button class="btn2 red !py-1 !px-2 text-xs" data-act="pinrm" data-i="${i}" data-j="${j}">✕</button></div>`; }).join('') || '<p class="text-xs text-black/50 py-2">এখনো কিছু সাজানো হয়নি। নিচে খুঁজে যোগ করুন, না করলে সব প্রোডাক্ট স্বাভাবিক ক্রমে দেখাবে।</p>'}</div>
-    <div class="mt-3"><input class="inp" data-in="homeq" data-i="${i}" placeholder="🔍 নাম/ব্র্যান্ড লিখে প্রোডাক্ট খুঁজুন…" value="${esc(homeQ[i] || '')}" autocomplete="off">${q ? `<div class="mt-2 border rounded-lg">${res.map(p => `<div class="flex items-center gap-2 p-1.5 border-b last:border-0"><img src="${esc(p.images?.[0] || '')}" class="w-8 h-10 object-cover rounded bg-gray-100 shrink-0" alt=""><p class="flex-1 min-w-0 text-xs leading-snug">${esc(p.name)}</p><button class="btn2 shrink-0 text-xs" data-act="pinadd" data-i="${i}" data-id="${p.id}">+ যোগ</button></div>`).join('') || '<p class="text-xs text-black/50 p-2">মেলেনি, অথবা এই ক্যাটাগরিতে নেই</p>'}</div>` : ''}</div></div>`;
+    <div class="max-h-96 overflow-y-auto">${s.pins.map((id, j) => { const p = byId(id); return `<div class="flex items-center gap-2 py-1.5 border-b"><input type="number" min="1" max="${s.pins.length}" value="${j + 1}" data-in="pinpos" data-i="${i}" data-j="${j}" class="inp !w-14 !px-1 !py-1 text-center shrink-0" aria-label="ক্রম নম্বর"><img src="${esc(th(p.images?.[0] || '', 120))}" loading="lazy" decoding="async" class="w-10 h-12 object-cover rounded bg-gray-100 shrink-0" alt=""><div class="flex-1 min-w-0"><p class="text-sm leading-snug">${esc(p.name)}</p>${hideNote(p) ? `<p class="text-xs red font-bold">সাইটে দেখাচ্ছে না: ${hideNote(p)}</p>` : ''}</div><button class="btn2 !py-1 !px-2 text-xs" data-act="pinup" data-i="${i}" data-j="${j}">↑</button><button class="btn2 !py-1 !px-2 text-xs" data-act="pindown" data-i="${i}" data-j="${j}">↓</button><button class="btn2 red !py-1 !px-2 text-xs" data-act="pinrm" data-i="${i}" data-j="${j}">✕</button></div>`; }).join('') || '<p class="text-xs text-black/50 py-2">এখনো কিছু সাজানো হয়নি। নিচে খুঁজে যোগ করুন, না করলে সব প্রোডাক্ট স্বাভাবিক ক্রমে দেখাবে।</p>'}</div>
+    <div class="mt-3"><input class="inp" data-in="homeq" data-i="${i}" placeholder="🔍 নাম/ব্র্যান্ড লিখে প্রোডাক্ট খুঁজুন…" value="${esc(homeQ[i] || '')}" autocomplete="off">${q ? `<div class="mt-2 border rounded-lg">${res.map(p => `<div class="flex items-center gap-2 p-1.5 border-b last:border-0"><img src="${esc(th(p.images?.[0] || '', 100))}" loading="lazy" decoding="async" class="w-8 h-10 object-cover rounded bg-gray-100 shrink-0" alt=""><p class="flex-1 min-w-0 text-xs leading-snug">${esc(p.name)}</p><button class="btn2 shrink-0 text-xs" data-act="pinadd" data-i="${i}" data-id="${p.id}">+ যোগ</button></div>`).join('') || '<p class="text-xs text-black/50 p-2">মেলেনি, অথবা এই ক্যাটাগরিতে নেই</p>'}</div>` : ''}</div></div>`;
   }).join('')}</div>`;
 }
 
@@ -262,11 +286,11 @@ function vCats() {
     const out = D.products.filter(p => !catsOf(p).includes(k)).sort(byName);
     const isCustom = customCats().includes(k) && !inC.length;
     return `<div class="card p-3"><div class="flex justify-between items-center mb-2 gap-2"><h3 class="font-bold break-words min-w-0">${esc(k)}</h3><span class="text-xs font-bold px-2 py-0.5 rounded-full bg-black/10 shrink-0">${bn(inC.length)}টি</span></div>
-    <div class="flex items-center gap-2 mb-2">${catEnt(k).icon ? `<img src="${esc(catEnt(k).icon)}" class="h-10 w-10 object-cover rounded-full bg-gray-50" alt="">` : '<span class="text-xs text-black/50">আইকন নেই / বিল্ট-ইন</span>'}<label class="btn2 !py-1 !px-2 text-xs cursor-pointer">আইকন<input type="file" accept="image/*" class="hidden" data-in="caticon" data-cat="${esc(k)}"></label>${catEnt(k).icon ? `<button class="btn2 red !py-1 !px-2 text-xs" data-act="caticonrm" data-cat="${esc(k)}">আইকন সরান</button>` : ''}</div>
+    <div class="flex items-center gap-2 mb-2">${catEnt(k).icon ? `<img src="${esc(th(catEnt(k).icon, 100))}" loading="lazy" class="h-10 w-10 object-cover rounded-full bg-gray-50" alt="">` : '<span class="text-xs text-black/50">আইকন নেই / বিল্ট-ইন</span>'}<label class="btn2 !py-1 !px-2 text-xs cursor-pointer">আইকন<input type="file" accept="image/*" class="hidden" data-in="caticon" data-cat="${esc(k)}"></label>${catEnt(k).icon ? `<button class="btn2 red !py-1 !px-2 text-xs" data-act="caticonrm" data-cat="${esc(k)}">আইকন সরান</button>` : ''}</div>
     <div class="flex gap-1.5 mb-2"><button class="btn2 !py-1 !px-2 text-xs" data-act="catup" data-cat="${esc(k)}">↑</button><button class="btn2 !py-1 !px-2 text-xs" data-act="catdown" data-cat="${esc(k)}">↓</button><button class="btn2 !py-1 !px-2 text-xs" data-act="cathide" data-cat="${esc(k)}">${catEnt(k).hidden ? 'সাইটে দেখান' : 'সাইটে লুকান'}</button></div>
     <div class="flex gap-1.5 mb-2 items-center"><input readonly class="inp !py-1 text-xs" dir="ltr" value="${esc(location.origin + '/#cat=' + encodeURIComponent(k))}" onfocus="this.select()"><button class="btn2 !py-1 !px-2 text-xs shrink-0" data-act="catlink" data-cat="${esc(k)}">🔗 লিংক কপি</button></div>
     <div class="flex gap-2 mb-2"><select id="cmv-${i}" class="inp"><option value="">ট্রান্সফারের ক্যাটাগরি…</option>${allCats().filter(x => x !== k).map(x => `<option value="${esc(x)}">${esc(x)}</option>`).join('')}</select>${inC.length ? `<button class="btn2 shrink-0 text-xs" data-act="catmoveall" data-i="${i}" data-cat="${esc(k)}" aria-label="সব প্রোডাক্ট সরান">সব সরান</button>` : ''}</div>
-    <div class="max-h-96 overflow-y-auto">${inC.map(p => `<div class="flex items-center gap-2 py-1.5 border-b"><img src="${esc(p.images?.[0] || '')}" class="w-10 h-12 object-cover rounded bg-gray-100 shrink-0" alt=""><div class="flex-1 min-w-0"><p class="text-sm leading-snug">${esc(p.name)}</p>${hideNote(p) ? `<p class="text-xs red font-bold">সাইটে দেখাচ্ছে না: ${hideNote(p)}</p>` : ''}<p class="text-xs text-black/60">${tk(p.offer)} · স্টক ${bn(+p.stock || 0)}</p></div><button class="btn2 shrink-0 text-xs" data-act="pedit" data-id="${p.id}" aria-label="প্রোডাক্ট এডিট করুন">✏️ এডিট</button><button class="btn2 shrink-0 text-xs" data-act="catmove" data-id="${p.id}" data-i="${i}" data-cat="${esc(k)}" aria-label="অন্য ক্যাটাগরিতে সরান">↪</button><button class="btn2 red shrink-0" data-act="catrm" data-id="${p.id}" data-cat="${esc(k)}" aria-label="ক্যাটাগরি থেকে বাদ দিন">✕</button></div>`).join('') || '<p class="text-sm text-black/50 py-2">এই ক্যাটাগরিতে কোনো প্রোডাক্ট নেই (সাইটে আইকন দেখাবে না)</p>'}</div>
+    <div class="max-h-96 overflow-y-auto">${inC.map(p => `<div class="flex items-center gap-2 py-1.5 border-b"><img src="${esc(th(p.images?.[0] || '', 120))}" loading="lazy" decoding="async" class="w-10 h-12 object-cover rounded bg-gray-100 shrink-0" alt=""><div class="flex-1 min-w-0"><p class="text-sm leading-snug">${esc(p.name)}</p>${hideNote(p) ? `<p class="text-xs red font-bold">সাইটে দেখাচ্ছে না: ${hideNote(p)}</p>` : ''}<p class="text-xs text-black/60">${tk(p.offer)} · স্টক ${bn(+p.stock || 0)}</p></div><button class="btn2 shrink-0 text-xs" data-act="pedit" data-id="${p.id}" aria-label="প্রোডাক্ট এডিট করুন">✏️ এডিট</button><button class="btn2 shrink-0 text-xs" data-act="catmove" data-id="${p.id}" data-i="${i}" data-cat="${esc(k)}" aria-label="অন্য ক্যাটাগরিতে সরান">↪</button><button class="btn2 red shrink-0" data-act="catrm" data-id="${p.id}" data-cat="${esc(k)}" aria-label="ক্যাটাগরি থেকে বাদ দিন">✕</button></div>`).join('') || '<p class="text-sm text-black/50 py-2">এই ক্যাটাগরিতে কোনো প্রোডাক্ট নেই (সাইটে আইকন দেখাবে না)</p>'}</div>
     ${out.length ? `<div class="flex gap-2 mt-3"><select id="cadd-${i}" class="inp"><option value="">প্রোডাক্ট বেছে নিন…</option>${out.map(p => `<option value="${p.id}">${esc(p.name)}</option>`).join('')}</select><button class="btn shrink-0" data-act="catadd" data-i="${i}" data-cat="${esc(k)}">+ যোগ</button></div>` : '<p class="text-xs text-black/50 mt-3">সব প্রোডাক্টই এই ক্যাটাগরিতে আছে</p>'}
     ${isCustom ? `<button class="btn2 red w-full mt-3" data-act="catdelete" data-cat="${esc(k)}">এই ক্যাটাগরি মুছুন</button>` : ''}</div>`;
   }).join('')}</div>`;
@@ -291,10 +315,10 @@ function vBrands() {
     const out = D.products.filter(p => brandOf(p) !== b.name).sort(byName);
     const custom = !BRANDS.some(([n]) => n === b.name);
     return `<div class="card p-3"><div class="flex justify-between items-center mb-2 gap-2"><h3 class="font-bold break-words min-w-0">${esc(b.name)}${b.hidden ? ' <span class="text-xs red">(লুকানো)</span>' : ''}</h3><span class="text-xs font-bold px-2 py-0.5 rounded-full bg-black/10 shrink-0">${bn(inB.length)}টি</span></div>
-    <div class="flex items-center gap-2 mb-2">${b.logo ? `<img src="${esc(b.logo)}" class="h-10 max-w-[80px] object-contain rounded bg-gray-50" alt="">` : '<span class="text-xs text-black/50">লোগো নেই / বিল্ট-ইন</span>'}
+    <div class="flex items-center gap-2 mb-2">${b.logo ? `<img src="${esc(th(b.logo, 200))}" loading="lazy" class="h-10 max-w-[80px] object-contain rounded bg-gray-50" alt="">` : '<span class="text-xs text-black/50">লোগো নেই / বিল্ট-ইন</span>'}
       <label class="btn2 !py-1 !px-2 text-xs cursor-pointer">লোগো<input type="file" accept="image/*" class="hidden" data-in="brandlogo" data-brand="${esc(b.name)}"></label>${b.logo ? `<button class="btn2 red !py-1 !px-2 text-xs" data-act="brandlogorm" data-brand="${esc(b.name)}">লোগো সরান</button>` : ''}</div>
     <div class="flex gap-1.5 mb-2"><button class="btn2 !py-1 !px-2 text-xs" data-act="brandup" data-brand="${esc(b.name)}">↑</button><button class="btn2 !py-1 !px-2 text-xs" data-act="branddown" data-brand="${esc(b.name)}">↓</button><button class="btn2 !py-1 !px-2 text-xs" data-act="brandhide" data-brand="${esc(b.name)}">${b.hidden ? 'সাইটে দেখান' : 'সাইটে লুকান'}</button></div>
-    <div class="max-h-72 overflow-y-auto">${inB.map(p => `<div class="flex items-center gap-2 py-1.5 border-b"><img src="${esc(p.images?.[0] || '')}" class="w-10 h-12 object-cover rounded bg-gray-100 shrink-0" alt=""><p class="flex-1 min-w-0 text-sm leading-snug">${esc(p.name)}</p><button class="btn2 red shrink-0" data-act="brandrm" data-id="${p.id}">বাদ</button></div>`).join('') || '<p class="text-xs text-black/50">কোনো প্রোডাক্ট নেই</p>'}</div>
+    <div class="max-h-72 overflow-y-auto">${inB.map(p => `<div class="flex items-center gap-2 py-1.5 border-b"><img src="${esc(th(p.images?.[0] || '', 120))}" loading="lazy" decoding="async" class="w-10 h-12 object-cover rounded bg-gray-100 shrink-0" alt=""><p class="flex-1 min-w-0 text-sm leading-snug">${esc(p.name)}</p><button class="btn2 red shrink-0" data-act="brandrm" data-id="${p.id}">বাদ</button></div>`).join('') || '<p class="text-xs text-black/50">কোনো প্রোডাক্ট নেই</p>'}</div>
     ${out.length ? `<div class="flex gap-2 mt-3"><select id="badd-${i}" class="inp"><option value="">প্রোডাক্ট বেছে নিন…</option>${out.map(p => `<option value="${p.id}">${esc(p.name)}</option>`).join('')}</select><button class="btn shrink-0" data-act="brandadd" data-i="${i}" data-brand="${esc(b.name)}">+ যোগ</button></div>` : ''}
     ${custom && !inB.length ? `<button class="btn2 red w-full mt-3" data-act="branddel" data-brand="${esc(b.name)}">এই ব্র্যান্ড মুছুন</button>` : ''}</div>`;
   }).join('')}</div>`;
@@ -328,15 +352,16 @@ const PFN = [['all', 'সব'], ['lg', '🛒 Ladyglamour'], ['todo', '⏳ এড
 function vProducts(onlyList) {
   const q = pSearch.toLowerCase(), list = D.products.filter(p => PF[pFilter](p) && (!q || (p.name + p.cat).toLowerCase().includes(q))).sort((a, b) => (a.movedAt || 0) - (b.movedAt || 0) || (a.name || '').localeCompare(b.name || ''));
   const rvCount = {}; D.reviews.forEach(r => { if (r.pid) rvCount[r.pid] = (rvCount[r.pid] || 0) + 1; });
-  const cards = list.map(p => `<div class="card overflow-hidden ${p.active === false ? 'opacity-50' : ''}">
-    <div class="relative"><img src="${esc(p.images?.[0] || '')}" class="w-full aspect-[4/5] object-cover bg-gray-100" alt="" loading="lazy" decoding="async">
+  const shown = list.slice(0, pShow);
+  const cards = shown.map(p => `<div class="card overflow-hidden ${p.active === false ? 'opacity-50' : ''}">
+    <div class="relative"><img src="${esc(th(p.images?.[0] || '', 320))}" class="w-full aspect-[4/5] object-cover bg-gray-100" alt="" loading="lazy" decoding="async">
     <div class="absolute top-1.5 left-1.5 flex flex-col gap-1 items-start">${isLG(p) ? '<span class="px-2 py-0.5 rounded-full text-[11px] font-bold bg-blue-600 text-white">Ladyglamour</span>' : ''}${p.edited ? '<span class="px-2 py-0.5 rounded-full text-[11px] font-bold bg-green-600 text-white">✏️ এডিটেড</span>' : ''}</div></div>
     <div class="p-3 text-sm"><p class="font-semibold leading-snug min-h-[2.6rem]">${esc(p.name)}</p>
     ${p.brand ? `<p class="text-xs text-black/60">ব্র্যান্ড: <b>${esc(p.brand)}</b></p>` : ''}
     <p class="mt-1"><b>${tk(p.offer)}</b> <s class="text-black/40">${tk(p.regular)}</s></p>
     <p class="text-xs ${+p.stock <= 5 ? 'red font-bold' : 'text-black/60'}">স্টক: ${bn(+p.stock || 0)}${p.active === false ? ' · লুকানো' : ''}</p>
     <p class="text-xs mt-0.5 text-black/60">${secOf(p).length ? 'সেকশন: ' + SECTIONS.filter(s => secOf(p).includes(s[0])).map(s => s[2]).join(' · ') : 'সেকশন: নেই (More Products এ দেখাবে)'}</p>
-    <div class="flex gap-2 mt-2"><button class="btn2 flex-1" data-act="pedit" data-id="${p.id}">এডিট</button>${p.edited ? `<button class="btn2" data-act="punmark" data-id="${p.id}" aria-label="এডিটেড চিহ্ন সরান" title="এডিটেড চিহ্ন সরান">↩</button>` : ''}<button class="btn2" data-act="rvnewp" data-id="${p.id}" aria-label="এই প্রোডাক্টে রিভিউ যোগ করুন">⭐ ${bn(rvCount[p.id] || 0)}</button><button class="btn2" data-act="plink" data-id="${p.id}" aria-label="প্রোডাক্টের লিংক কপি">🔗</button><button class="btn2 red" data-act="pdel" data-id="${p.id}">✕</button></div></div></div>`).join('');
+    <div class="flex gap-2 mt-2"><button class="btn2 flex-1" data-act="pedit" data-id="${p.id}">এডিট</button>${p.edited ? `<button class="btn2" data-act="punmark" data-id="${p.id}" aria-label="এডিটেড চিহ্ন সরান" title="এডিটেড চিহ্ন সরান">↩</button>` : ''}<button class="btn2" data-act="rvnewp" data-id="${p.id}" aria-label="এই প্রোডাক্টে রিভিউ যোগ করুন">⭐ ${bn(rvCount[p.id] || 0)}</button><button class="btn2" data-act="plink" data-id="${p.id}" aria-label="প্রোডাক্টের লিংক কপি">🔗</button><button class="btn2 red" data-act="pdel" data-id="${p.id}">✕</button></div></div></div>`).join('') + (list.length > shown.length ? `<div class="col-span-full text-center py-3"><button class="btn2" data-act="pmore">আরও দেখান (${bn(list.length - shown.length)}টি বাকি)</button></div>` : '');
   if (onlyList) return cards;
   const pc = k => D.products.filter(PF[k]).length, unmarked = D.products.filter(p => isLG(p) && p.source !== 'ladyglamour').length;
   return `<div class="flex gap-2 mb-3"><input class="inp" placeholder="প্রোডাক্ট খুঁজুন…" value="${esc(pSearch)}" data-in="psearch"><button class="btn shrink-0" data-act="pnew">+ নতুন</button></div>
@@ -452,7 +477,7 @@ function promoForm(p) {
 function orderModal(o) {
   openModal(`<div class="flex justify-between items-start"><div><h2 class="font-bold text-lg">${esc(o.orderNo)}</h2><p class="text-xs text-black/60">${dt(o.createdAt)}</p></div>${badge(o.status)}</div>
   <div class="mt-3 text-sm space-y-1"><p>👤 <b>${esc(o.name)}</b> · 📞 ${esc(o.phone)}</p><p>📍 ${esc(o.address)}${o.area ? ` <span class="text-black/50">(${esc(o.area)})</span>` : ''}</p>${o.note ? `<p>📝 ${esc(o.note)}</p>` : ''}</div>
-  <div class="mt-3 border rounded-xl divide-y text-sm">${(o.items || []).map(i => `<div class="p-2 flex gap-2 items-center">${(() => { const im = i.image || D.products.find(p => p.id === i.pid)?.images?.[0] || ''; return im ? `<img src="${esc(im)}" class="w-10 h-12 object-cover rounded">` : ''; })()}<span class="flex-1">${esc(i.name)}${i.variant ? ` <b class="text-blue-700">📏 ${esc(i.variant)}</b>` : ''}${i.shade ? ` <b class="text-pink-700">🎨 ${esc(i.shade)}</b>` : ''}<br><span class="text-black/60">${tk(i.price)} × ${bn(i.qty)}</span></span><b>${tk(i.price * i.qty)}</b></div>`).join('')}
+  <div class="mt-3 border rounded-xl divide-y text-sm">${(o.items || []).map(i => `<div class="p-2 flex gap-2 items-center">${(() => { const im = i.image || D.products.find(p => p.id === i.pid)?.images?.[0] || ''; return im ? `<img src="${esc(th(im, 100))}" loading="lazy" class="w-10 h-12 object-cover rounded">` : ''; })()}<span class="flex-1">${esc(i.name)}${i.variant ? ` <b class="text-blue-700">📏 ${esc(i.variant)}</b>` : ''}${i.shade ? ` <b class="text-pink-700">🎨 ${esc(i.shade)}</b>` : ''}<br><span class="text-black/60">${tk(i.price)} × ${bn(i.qty)}</span></span><b>${tk(i.price * i.qty)}</b></div>`).join('')}
     <div class="p-2 flex justify-between"><span>সাবটোটাল</span><span>${tk(o.subtotal)}</span></div><div class="p-2 flex justify-between"><span>ডেলিভারি</span><span>${tk(o.delivery)}</span></div>
     ${o.discount ? `<div class="p-2 flex justify-between"><span>ছাড় ${o.promo ? '(' + esc(o.promo) + ')' : ''}</span><span>-${tk(o.discount)}</span></div>` : ''}<div class="p-2 flex justify-between font-bold"><span>মোট</span><span>${tk(o.total)}</span></div></div>
   <label class="block mt-3 text-sm font-semibold">স্ট্যাটাস<select id="oStatus" class="inp mt-1 font-normal">${Object.entries(ST).map(([k, v]) => `<option value="${k}" ${o.status === k ? 'selected' : ''}>${v[0]}</option>`).join('')}</select></label>
@@ -659,7 +684,7 @@ async function syncCatalog(force) {
     setSync('❌ ক্যাটালগ আপডেট হয়নি: ' + (e.code || e.message) + (e.code === 'permission-denied' ? ' — Firebase Rules এ catalog এর অনুমতি যোগ করুন' : ''));
   } finally { syncBusy = false; if (syncAgain) { syncAgain = false; schedSync(); } }
 }
-const isExt = x => /^https?:\/\//i.test(String(x)) && !/res\.cloudinary\.com/i.test(String(x));
+const isExt = x => /^https?:\/\//i.test(String(x)) && !/res\.cloudinary\.com|ik\.imagekit\.io/i.test(String(x));
 function vSyncBar() {
   const heavy = D.products.filter(p => (p.images || []).some(isData)).length, ext = D.products.filter(p => (p.images || []).some(isExt)).length;
   return `<div class="card p-4 mb-3 text-sm"><p class="font-semibold">⚡ সাইটের ক্যাটালগ (রিড কমানোর ব্যবস্থা)</p>
@@ -682,7 +707,7 @@ function vNoCld() {
   const keys = Object.keys(g).sort((x, y) => g[y].length - g[x].length || x.localeCompare(y));
   return `<details class="mt-3 border-t pt-3" ${window.__cldOpen ? 'open' : ''} ontoggle="window.__cldOpen=this.open"><summary class="font-semibold cursor-pointer">📂 যেগুলোর ছবি Cloudinary-তে নেই: ${bn(list.length)}টি (ক্যাটাগরি অনুযায়ী)</summary>
   <div class="mt-2 space-y-2">${keys.map(k => `<details class="rounded-lg bg-black/5 px-3 py-2"><summary class="cursor-pointer font-semibold text-sm">${esc(k)} <span class="text-xs font-bold px-2 py-0.5 rounded-full bg-black/10">${bn(g[k].length)}টি</span></summary>
-    <div class="mt-2">${g[k].sort((x, y) => (x[0].name || '').localeCompare(y[0].name || '')).map(([p, st]) => `<div class="flex items-center gap-2 py-1.5 border-b border-black/10"><img src="${esc((p.images || []).find(x => !isData(x)) || '')}" class="w-10 h-12 object-cover rounded bg-gray-100 shrink-0" alt="" loading="lazy"><div class="flex-1 min-w-0"><p class="text-sm leading-snug">${esc(p.name)}</p><p class="text-xs text-black/60">${esc(st)} · ${tk(p.offer)} · স্টক ${bn(+p.stock || 0)}</p></div><button class="btn2 shrink-0 text-xs" data-act="imgdl" data-id="${p.id}" aria-label="ছবি ডাউনলোড">⬇ ছবি</button><button class="btn2 shrink-0 text-xs" data-act="pedit" data-id="${p.id}">✏️ এডিট</button></div>`).join('')}</div></details>`).join('')}</div></details>`;
+    <div class="mt-2">${g[k].sort((x, y) => (x[0].name || '').localeCompare(y[0].name || '')).map(([p, st]) => `<div class="flex items-center gap-2 py-1.5 border-b border-black/10"><img src="${esc(th((p.images || []).find(x => !isData(x)) || '', 100))}" loading="lazy" class="w-10 h-12 object-cover rounded bg-gray-100 shrink-0" alt="" loading="lazy"><div class="flex-1 min-w-0"><p class="text-sm leading-snug">${esc(p.name)}</p><p class="text-xs text-black/60">${esc(st)} · ${tk(p.offer)} · স্টক ${bn(+p.stock || 0)}</p></div><button class="btn2 shrink-0 text-xs" data-act="imgdl" data-id="${p.id}" aria-label="ছবি ডাউনলোড">⬇ ছবি</button><button class="btn2 shrink-0 text-xs" data-act="pedit" data-id="${p.id}">✏️ এডিট</button></div>`).join('')}</div></details>`).join('')}</div></details>`;
 }
 async function migrateImages() {
   const todo = D.products.filter(p => (p.images || []).some(isData));
@@ -734,7 +759,7 @@ function vReviews() {
     <div class="flex flex-wrap items-center gap-2 text-sm"><b>${esc(r.name)}</b><span class="px-2 py-0.5 rounded-full text-xs font-bold ${RVST[r.status]?.[1] || ''}">${RVST[r.status]?.[0] || esc(r.status)}</span><span class="text-xs text-black/50">${r.source === 'admin' ? 'এডমিন যোগ করেছে' : 'কাস্টমার'} · ${dt(r.createdAt)}</span>${r.status === 'approved' && r.home === false ? '<span class="text-xs text-black/50">· হোমে নেই</span>' : ''}</div>
     ${r.pid ? `<p class="text-xs text-black/70 mt-1">📦 পণ্য: <b>${esc(r.pname)}</b></p>` : `<p class="text-xs mt-1 ${r.pname ? 'red font-bold' : 'text-black/50'}">${r.pname ? '⚠ পণ্য সংযুক্ত নেই (' + esc(r.pname) + ') — নিচের "পণ্য বদলান" চাপুন' : 'কোনো পণ্য নির্দিষ্ট করা নেই (সাধারণ রিভিউ)'}</p>`}
     ${r.text ? `<p class="text-sm mt-2 whitespace-pre-line break-words">${esc(r.text)}</p>` : ''}
-    ${(r.images || []).length ? `<div class="flex gap-2 mt-2 flex-wrap">${r.images.map(u => `<a href="${esc(u)}" target="_blank"><img src="${esc(u)}" class="w-20 h-20 object-cover rounded-lg border"></a>`).join('')}</div>` : ''}
+    ${(r.images || []).length ? `<div class="flex gap-2 mt-2 flex-wrap">${r.images.map(u => `<a href="${esc(u)}" target="_blank"><img src="${esc(th(u, 160))}" loading="lazy" class="w-20 h-20 object-cover rounded-lg border"></a>`).join('')}</div>` : ''}
     <div class="flex flex-wrap gap-2 mt-3">
       ${r.status !== 'approved' ? `<button class="btn2 !py-1 !px-3 text-xs" data-act="rvset" data-st="approved" data-id="${r.id}">✅ অনুমোদন</button>` : `<button class="btn2 !py-1 !px-3 text-xs" data-act="rvset" data-st="hidden" data-id="${r.id}">🙈 লুকান</button>`}
       ${r.status === 'approved' ? `<button class="btn2 !py-1 !px-3 text-xs" data-act="rvhome" data-id="${r.id}">${r.home === false ? '🏠 হোমে দেখান' : '🏠 হোম থেকে সরান'}</button>` : ''}
@@ -750,7 +775,7 @@ const drawRvRes = () => {
   const box = $('#rvaRes'); if (!box) return;
   const toks = ($('#rvaPq')?.value || '').trim().toLowerCase().split(/\s+/).filter(Boolean);
   const m = D.products.filter(p => toks.every(t => ((p.name || '') + ' ' + (p.brand || '')).toLowerCase().includes(t))).sort((a, b) => (a.name || '').localeCompare(b.name || ''));
-  box.innerHTML = (m.slice(0, 40).map(p => `<button type="button" data-act="rvpick" data-id="${p.id}" class="w-full flex items-center gap-2 p-2 border-b text-left text-sm hover:bg-black/5 ${rvPick?.id === p.id ? 'bg-green-50' : ''}"><img src="${esc(p.images?.[0] || '')}" class="w-9 h-9 object-cover rounded bg-gray-100 shrink-0" alt="" loading="lazy"><span class="flex-1 leading-snug">${esc(p.name)}</span><span class="text-xs text-black/50 shrink-0">${tk(p.offer)}</span></button>`).join('') || '<p class="p-3 text-sm text-black/50">কোনো প্রোডাক্ট পাওয়া যায়নি</p>') + (m.length > 40 ? `<p class="p-2 text-xs text-black/50">আরও ${bn(m.length - 40)}টি আছে — নাম আরেকটু লিখে ছোট করুন</p>` : '');
+  box.innerHTML = (m.slice(0, 40).map(p => `<button type="button" data-act="rvpick" data-id="${p.id}" class="w-full flex items-center gap-2 p-2 border-b text-left text-sm hover:bg-black/5 ${rvPick?.id === p.id ? 'bg-green-50' : ''}"><img src="${esc(th(p.images?.[0] || '', 80))}" class="w-9 h-9 object-cover rounded bg-gray-100 shrink-0" alt="" loading="lazy" decoding="async"><span class="flex-1 leading-snug">${esc(p.name)}</span><span class="text-xs text-black/50 shrink-0">${tk(p.offer)}</span></button>`).join('') || '<p class="p-3 text-sm text-black/50">কোনো প্রোডাক্ট পাওয়া যায়নি</p>') + (m.length > 40 ? `<p class="p-2 text-xs text-black/50">আরও ${bn(m.length - 40)}টি আছে — নাম আরেকটু লিখে ছোট করুন</p>` : '');
 };
 function rvModal(pid) {
   const p = pid ? D.products.find(x => x.id === pid) : null;
@@ -899,7 +924,8 @@ const A = {
     const k = b.dataset.cat; $('#fCat').value = k;
     const cb = [...document.querySelectorAll('[data-catchk]')].find(x => x.dataset.catchk === k); if (cb) cb.checked = true;
   },
-  pfilter: b => { pFilter = b.dataset.v; render(); },
+  pfilter: b => { pFilter = b.dataset.v; pShow = 30; render(); },
+  pmore: () => { pShow += 30; const el = $('#plist'); if (el) el.innerHTML = vProducts(true); else render(); },
   punmark: async b => { try { await updateDoc(doc(db, 'products', b.dataset.id), { edited: false, movedAt: 0 }); toast('চিহ্ন সরানো হয়েছে'); } catch (e) { toast('হয়নি: ' + e.code); } },
   lgmark: async () => { const todo = D.products.filter(p => isLG(p) && p.source !== 'ladyglamour'); if (!todo.length) return; try { for (let i = 0; i < todo.length; i += 400) { const bt = writeBatch(db); todo.slice(i, i + 400).forEach(p => bt.update(doc(db, 'products', p.id), { source: 'ladyglamour' })); await bt.commit(); } toast('🏷 ' + bn(todo.length) + 'টি প্রোডাক্টে চিহ্ন বসেছে ✅'); } catch (e) { toast('হয়নি: ' + e.code); } },
   rmimg: b => { form.images.splice(+b.dataset.i, 1); drawImgs(); },
@@ -1027,7 +1053,7 @@ document.addEventListener('input', e => {
   if (k === 'pbrand') e.target.dataset.auto = '';
   if (k === 'secq') { const sec = e.target.dataset.sec; secQ[sec] = e.target.value; deb('s' + sec, () => { const n0 = document.querySelector('[data-in=secq][data-sec="' + sec + '"]'), p = n0 ? n0.selectionStart : 0; render(); const n = document.querySelector('[data-in=secq][data-sec="' + sec + '"]'); if (n) { n.focus(); n.setSelectionRange(p, p); } }); }
   if (k === 'homeq') { const i = e.target.dataset.i; homeQ[i] = e.target.value; deb('h' + i, () => { const sel = '[data-in=homeq][data-i="' + i + '"]', n0 = document.querySelector(sel), p = n0 ? n0.selectionStart : 0; render(); const n = document.querySelector(sel); if (n) { n.focus(); n.setSelectionRange(p, p); } }); }
-  if (k === 'psearch') { pSearch = e.target.value; deb('p', () => { const el = $('#plist'); if (el) el.innerHTML = vProducts(true); else render(); }); }
+  if (k === 'psearch') { pSearch = e.target.value; pShow = 30; deb('p', () => { const el = $('#plist'); if (el) el.innerHTML = vProducts(true); else render(); }); }
   if (k === 'osearch') { oSearch = e.target.value; deb('o', () => { const n0 = $('[data-in=osearch]'), p = n0 ? n0.selectionStart : 0; render(); const n = $('[data-in=osearch]'); if (n) { n.focus(); n.setSelectionRange(p, p); } }); }
 });
 document.addEventListener('change', async e => {
@@ -1037,7 +1063,7 @@ document.addEventListener('change', async e => {
     for (const f of files) {
       if (rvImgs.length >= 5) break;
       toast('ছবি আপলোড হচ্ছে… (' + bn(ok + 1) + ')');
-      try { rvImgs.push(await uploadCld(f)); ok++; drawRvImgs(); } catch (er) { fail = er.message; }
+      try { rvImgs.push(await uploadImg(f)); ok++; drawRvImgs(); } catch (er) { fail = er.message; }
     }
     toast(fail ? 'আপলোড হয়নি: ' + fail : bn(ok) + 'টি ছবি আপলোড হয়েছে ✅');
   }
@@ -1046,7 +1072,7 @@ document.addEventListener('change', async e => {
     for (const f of files) {
       if (form.images.length >= 15) break;
       toast('ছবি আপলোড হচ্ছে… (' + bn(ok + 1) + '/' + bn(Math.min(files.length, 15 - form.images.length + ok)) + ')');
-      try { form.images.push(await uploadCld(f)); ok++; drawImgs(); } catch (er) { fail = er.message; }
+      try { form.images.push(await uploadImg(f)); ok++; drawImgs(); } catch (er) { fail = er.message; }
     }
     drawImgs();
     toast(fail ? (ok ? bn(ok) + 'টি হয়েছে, বাকিগুলো হয়নি: ' : 'আপলোড হয়নি: ') + fail : bn(ok) + 'টি ছবি আপলোড হয়েছে ✅ (এখন "সেভ করুন" চাপুন)');
@@ -1056,8 +1082,8 @@ document.addEventListener('change', async e => {
   if (k === 'banner' && t.files[0]) { toast('আপলোড হচ্ছে…'); try { await addDoc(collection(db, 'banners'), { image: await fileToData(t.files[0], 1400, .8), link: '', active: true, createdAt: serverTimestamp() }); toast('ব্যানার যোগ হয়েছে ✅'); } catch (er) { toast('আপলোড হয়নি: ' + er.code); } }
   if (k === 'popup' && t.files[0]) { toast('আপলোড হচ্ছে…'); try { await addDoc(collection(db, 'banners'), { image: await fileTo50(t.files[0]), kind: 'popup', link: '', active: true, createdAt: serverTimestamp() }); toast('পপআপ এড যোগ হয়েছে ✅'); } catch (er) { toast('আপলোড হয়নি: ' + er.code); } }
   if (k === 'blink') updateDoc(doc(db, 'banners', t.dataset.id), { link: t.value.trim() });
-  if (k === 'brandlogo' && t.files[0]) { const f = t.files[0], nm = t.dataset.brand; t.value = ''; toast('লোগো আপলোড হচ্ছে…'); try { const url = await uploadCld(f); await saveBrands(brandCfg().map(x => x.name === nm ? { ...x, logo: url } : x)); } catch (er) { toast('আপলোড হয়নি: ' + (er.message || er.code)); } }
-  if (k === 'caticon' && t.files[0]) { const f = t.files[0], nm = t.dataset.cat; t.value = ''; toast('আইকন আপলোড হচ্ছে…'); try { const url = await uploadCld(f); await catPatch(nm, { icon: url }); } catch (er) { toast('আপলোড হয়নি: ' + (er.message || er.code)); } }
+  if (k === 'brandlogo' && t.files[0]) { const f = t.files[0], nm = t.dataset.brand; t.value = ''; toast('লোগো আপলোড হচ্ছে…'); try { const url = await uploadImg(f); await saveBrands(brandCfg().map(x => x.name === nm ? { ...x, logo: url } : x)); } catch (er) { toast('আপলোড হয়নি: ' + (er.message || er.code)); } }
+  if (k === 'caticon' && t.files[0]) { const f = t.files[0], nm = t.dataset.cat; t.value = ''; toast('আইকন আপলোড হচ্ছে…'); try { const url = await uploadImg(f); await catPatch(nm, { icon: url }); } catch (er) { toast('আপলোড হয়নি: ' + (er.message || er.code)); } }
   if (k === 'pinpos') { const i = +t.dataset.i, j = +t.dataset.j; homeEdit(i, x => { const to = Math.min(Math.max(Math.round(+t.value) || 1, 1), x.pins.length) - 1; moveIn(x.pins, j, to); }); }
   if (k === 'homesub') homeEdit(+t.dataset.i, x => { x.sub = t.value.trim(); });
   if (k === 'seed') { const f = t.files[0]; t.value = ''; impStart(f); }
