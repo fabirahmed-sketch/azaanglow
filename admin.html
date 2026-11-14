@@ -5,6 +5,12 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="robots" content="noindex,nofollow">
 <title>Azaan Admin</title>
+<link rel="manifest" href="/admin-manifest.json">
+<meta name="theme-color" content="#8dc63f">
+<link rel="apple-touch-icon" href="/admin-apple-touch-icon.png">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="Azaan Admin">
 <script src="https://cdn.tailwindcss.com"></script>
 <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+Bengali:wght@400;500;600;700&display=swap" rel="stylesheet">
 <style>body{font-family:'Noto Sans Bengali',system-ui,sans-serif;background:#f4f7ee;color:#14160f}
@@ -13,7 +19,7 @@
 .btn{background:#8dc63f;color:#14160f;font-weight:700;border-radius:.6rem;padding:.55rem 1rem;font-size:.9rem}
 .btn:hover{background:#14160f;color:#fff}.btn2{border:1px solid #c9cfbd;border-radius:.6rem;padding:.45rem .8rem;font-size:.85rem;background:#fff}
 .btn2:hover{border-color:#14160f}.red{color:#b91c1c}.card{background:#fff;border:1px solid #e3e7da;border-radius:1rem}
-.tab.on{background:#14160f;color:#fff}</style>
+.tab.on{background:#14160f;color:#fff}img[data-g]{cursor:pointer}</style>
 </head>
 <body>
 <div id="login" class="min-h-screen grid place-items-center p-4">
@@ -30,7 +36,9 @@
   <header class="bg-white border-b sticky top-0 z-30">
     <div class="max-w-6xl mx-auto px-3 py-2 flex items-center gap-2">
       <b class="text-lg">Azaan Admin</b>
-      <button data-act="sound" id="soundBtn" class="btn2 ml-auto">🔔 সাউন্ড বন্ধ</button>
+      <button data-act="install" id="installBtn" class="btn2 ml-auto hidden">📲 অ্যাপ ইনস্টল</button>
+      <button data-act="imgs" id="imgBtn" class="btn2" title="চালু করলে তালিকার সব ছবি লোড হয় (Cloudinary/ImageKit ক্রেডিট খরচ হয়)">🖼️ ছবি বন্ধ</button>
+      <button data-act="sound" id="soundBtn" class="btn2">🔔 সাউন্ড বন্ধ</button>
       <button data-act="logout" class="btn2">লগআউট</button>
     </div>
     <nav id="tabs" class="max-w-6xl mx-auto px-3 pb-2 flex gap-2 overflow-x-auto text-sm font-semibold"></nav>
@@ -151,6 +159,45 @@ const th = (u, w) => {
   if (sg) { let t = /(^|,)w_\d+/.test(sg[1]) ? sg[1].replace(/(^|,)w_\d+/, '$1w_' + w) : sg[1] + ',w_' + w; if (!/(^|,)c_/.test(t)) t += ',c_limit'; return m[1] + t + '/' + sg[2]; }
   return m[1] + 'f_auto,q_auto,c_limit,w_' + w + '/' + m[2];
 };
+
+/* ---------- ছবি লোড নিয়ন্ত্রণ: লগইনে/তালিকায় সব ছবি নামবে না (ক্রেডিট বাঁচাতে) ----------
+   ডিফল্ট: বন্ধ। কোনো ছবিতে চাপলে শুধু সেটাই লোড হয়। হেডারের "🖼️ ছবি" বাটনে সব ছবি চালু/বন্ধ করা যায়।
+   এডিট ফর্ম ও মডালের ছবি আগের মতোই দেখায়। */
+let IMG_ON = false; try { IMG_ON = localStorage.getItem('adm_imgs') === '1'; } catch (e) {}
+const IMG_SEEN = new Set();
+const IMG_PH = 'data:image/svg+xml,' + encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 80 96"><rect width="80" height="96" fill="#eef1e6"/><g fill="none" stroke="#a9b39a" stroke-width="3" stroke-linejoin="round" stroke-linecap="round"><rect x="20" y="32" width="40" height="30" rx="4"/><circle cx="33" cy="43" r="3.5"/><path d="M22 58l12-10 9 8 6-5 11 9"/></g><text x="40" y="78" font-size="8" fill="#8a947c" text-anchor="middle" font-family="sans-serif">tap to load</text></svg>');
+// ছবির ট্যাগ ব্রাউজারে ঢোকার আগেই (innerHTML বসানোর সময়) বদলে দেওয়া হয়, তাই কোনো রিকোয়েস্টই যায় না
+const guardHtml = h => h.replace(/<img\b([^>]*?)\ssrc="(https?:[^"]*)"/gi, (m, pre, u) => IMG_SEEN.has(u.replace(/&amp;/g, '&')) ? m : `<img${pre} src="${IMG_PH}" data-g="${u}" title="ছবি দেখতে চাপুন"`);
+{
+  const d = Object.getOwnPropertyDescriptor(Element.prototype, 'innerHTML');
+  Object.defineProperty(Element.prototype, 'innerHTML', { configurable: true, get() { return d.get.call(this); },
+    set(v) { if (!IMG_ON && typeof v === 'string' && v.indexOf('<img') > -1 && this.closest && this.closest('#view')) v = guardHtml(v); d.set.call(this, v); } });
+}
+function guardImgs() {
+  const v = document.getElementById('view'); if (!v) return;
+  const sync = () => { const b = document.getElementById('imgBtn'); if (b) b.textContent = IMG_ON ? '🖼️ ছবি চালু' : '🖼️ ছবি বন্ধ'; };
+  sync();
+  if (IMG_ON) return;
+  v.querySelectorAll('img').forEach(im => {
+    const u = im.getAttribute('src') || '';
+    if (!/^https?:/i.test(u) || im.dataset.g || IMG_SEEN.has(u)) return;
+    im.dataset.g = u; im.removeAttribute('loading'); im.src = IMG_PH; im.title = 'ছবি দেখতে চাপুন'; im.style.cursor = 'pointer';
+  });
+}
+document.addEventListener('click', e => {
+  const im = e.target.closest && e.target.closest('#view img[data-g]'); if (!im) return;
+  e.preventDefault(); e.stopPropagation();
+  IMG_SEEN.add(im.dataset.g); im.src = im.dataset.g; delete im.dataset.g; im.style.cursor = '';
+}, true);
+new MutationObserver(() => guardImgs()).observe(document.getElementById('view'), { childList: true, subtree: true });
+
+/* ---------- অ্যাডমিন অ্যাপ (PWA) ইনস্টল ---------- */
+let installEv = null;
+window.addEventListener('beforeinstallprompt', e => { e.preventDefault(); installEv = e; document.getElementById('installBtn')?.classList.remove('hidden'); });
+window.addEventListener('appinstalled', () => { installEv = null; document.getElementById('installBtn')?.classList.add('hidden'); });
+if ('serviceWorker' in navigator) window.addEventListener('load', () => navigator.serviceWorker.register('/admin-sw.js').catch(() => {}));
+const isStandalone = () => matchMedia('(display-mode: standalone)').matches || navigator.standalone;
+if (!isStandalone()) setTimeout(() => { const b = document.getElementById('installBtn'); if (b) b.classList.remove('hidden'); }, 1500);
 
 /* ---------- Modal ---------- */
 const openModal = h => { $('#modalBox').innerHTML = h; $('#modal').classList.remove('hidden'); };
@@ -839,6 +886,12 @@ async function tgSendOrder(o) {
 }
 const A = {
   tab: b => { tab = b.dataset.v; render(); },
+  imgs: () => { IMG_ON = !IMG_ON; try { localStorage.setItem('adm_imgs', IMG_ON ? '1' : '0'); } catch (e) {} render(); toast(IMG_ON ? 'ছবি চালু: তালিকার সব ছবি লোড হবে' : 'ছবি বন্ধ: ছবিতে চাপলে তবেই লোড হবে'); },
+  install: async () => {
+    if (installEv) { installEv.prompt(); try { await installEv.userChoice; } catch (e) {} installEv = null; return; }
+    if (isStandalone()) return toast('অ্যাপ আগে থেকেই ইনস্টল করা');
+    toast('Chrome মেনু (⋮) → "Install app" বা "Add to Home screen" চাপুন', 6000);
+  },
   close: closeModal,
   logout: () => signOut(auth),
   sound: () => { soundOn = !soundOn; $('#soundBtn').textContent = soundOn ? '🔔 সাউন্ড চালু' : '🔔 সাউন্ড বন্ধ'; if (soundOn) beep(); },
