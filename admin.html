@@ -145,6 +145,17 @@ async function uploadIK(file) {
   if (!res.ok || !j.url) throw new Error(j.error || 'upload failed');
   return j.url;
 }
+async function uploadBanner(file) {   // ব্যানার: ১২৮০ পিক্সেল প্রস্থ, ImageKit-এ; না হলে আগের মতো সরাসরি
+  const data = await fileToData(file, 1280, .8);
+  try {
+    const tk = await auth.currentUser.getIdToken();
+    const res = await fetch('/api/upload', { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + tk }, body: JSON.stringify({ file: data, fileName: 'banner-' + Date.now() + '.jpg' }) });
+    const j = await res.json().catch(() => ({}));
+    if (res.ok && j.url) return j.url;
+  } catch (e) { /* নিচে সরাসরি */ }
+  toast('ImageKit-এ হয়নি — ব্যানার সরাসরি রাখা হলো');
+  return data;
+}
 async function uploadImg(file) {
   try { return await uploadIK(file); }
   catch (e) { toast('ImageKit-এ হয়নি (' + (e.message || '') + ') — এবার Cloudinary-তে রাখা হলো'); return uploadCld(file); }
@@ -440,8 +451,8 @@ function vPromos() {
   return `<button class="btn mb-3" data-act="prnew">+ নতুন প্রমো কোড</button><div class="space-y-2">${D.promos.map(p => `<div class="card p-3 text-sm flex flex-wrap justify-between gap-2 items-center ${p.active === false ? 'opacity-50' : ''}"><span><b class="text-base">${esc(p.id)}</b> — ${p.type === 'percent' ? bn(p.value) + '% ছাড়' : tk(p.value) + ' ছাড়'}${+p.minOrder ? ` (ন্যূনতম ${tk(p.minOrder)})` : ''}<br><span class="text-black/60">ব্যবহার: ${bn(p.used || 0)}${+p.maxUses ? '/' + bn(p.maxUses) : ''} · মেয়াদ: ${p.expiry || 'নেই'}${p.active === false ? ' · বন্ধ' : ''}</span></span><span class="flex gap-2"><button class="btn2" data-act="predit" data-id="${esc(p.id)}">এডিট</button><button class="btn2 red" data-act="prdel" data-id="${esc(p.id)}">✕</button></span></div>`).join('') || '<p class="text-sm text-black/50">কোনো প্রমো কোড নেই</p>'}</div>`;
 }
 function vBanners() {
-  return `<div class="card p-4 mb-3"><h3 class="font-bold mb-2">নতুন ব্যানার (প্রস্তাবিত সাইজ ১৪০০×৫০০)</h3><input type="file" accept="image/*" data-in="banner"><p class="text-xs text-black/50 mt-1">ছবি বেছে নিলেই আপলোড হবে</p></div>
-  <div class="grid md:grid-cols-2 gap-3">${D.banners.filter(b => b.kind !== 'popup').map(b => `<div class="card overflow-hidden ${b.active === false ? 'opacity-50' : ''}"><img src="${esc(b.image)}" class="w-full" alt=""><div class="p-3 flex flex-wrap gap-2 items-center"><input class="inp flex-1" placeholder="লিংক (ঐচ্ছিক)" value="${esc(b.link || '')}" data-in="blink" data-id="${b.id}"><button class="btn2" data-act="btoggle" data-id="${b.id}">${b.active === false ? 'চালু করুন' : 'বন্ধ করুন'}</button><button class="btn2 red" data-act="bdel" data-id="${b.id}">✕</button></div></div>`).join('')}</div>`;
+  return `<div class="card p-4 mb-3"><h3 class="font-bold mb-2">নতুন ব্যানার (সাইজ ১২৮০×৭২০ পিক্সেল, অনুপাত ১৬:৯)</h3><input type="file" accept="image/*" data-in="banner"><p class="text-xs text-black/50 mt-1">ছবি বেছে নিলেই আপলোড হবে। ফোনে ব্যানার পুরো প্রস্থে ১৬:৯ মাপে দেখাবে; অন্য মাপের ছবির দুই পাশ বা ওপর-নিচ কেটে যেতে পারে। একাধিক দিলে নিজে নিজে স্লাইড করবে।</p></div>
+  <div class="grid md:grid-cols-2 gap-3">${D.banners.filter(b => b.kind !== 'popup').map(b => `<div class="card overflow-hidden ${b.active === false ? 'opacity-50' : ''}"><img src="${esc(th(b.image, 640))}" loading="lazy" class="w-full aspect-[16/9] object-cover" alt=""><div class="p-3 flex flex-wrap gap-2 items-center"><input class="inp flex-1" placeholder="লিংক (ঐচ্ছিক)" value="${esc(b.link || '')}" data-in="blink" data-id="${b.id}"><button class="btn2" data-act="btoggle" data-id="${b.id}">${b.active === false ? 'চালু করুন' : 'বন্ধ করুন'}</button><button class="btn2 red" data-act="bdel" data-id="${b.id}">✕</button></div></div>`).join('')}</div>`;
 }
 function vPopups() {
   return `<div class="card p-4 mb-3"><h3 class="font-bold mb-2">নতুন পপআপ এড ছবি (প্রস্তাবিত ৮০০×১০০০ বা বর্গাকার)</h3><input type="file" accept="image/*" data-in="popup"><p class="text-xs text-black/50 mt-1">ছবি বেছে নিলেই আপলোড হবে। সাইটে ঢুকলেই এই ছবিগুলো পপআপে দেখাবে (একাধিক হলে নিজে নিজে ঘুরবে), প্রতি ভিজিটরকে প্রতি সেশনে একবার। লিংক দিলে ছবিতে ক্লিক করলে সেখানে যাবে।</p></div>
@@ -1132,7 +1143,7 @@ document.addEventListener('change', async e => {
   }
   if (k === 'offimg') { const o = getOff(); for (const f of t.files) { if (o.sec.images.length >= 3) break; try { o.sec.images.push(await fileTo50(f)); } catch { toast('ছবি পড়া যায়নি'); } } t.value = ''; render(); }
   if (k === 'badgeimg' && t.files[0]) { try { getOff().badge.image = await fileToPng(t.files[0]); } catch { toast('ছবি পড়া যায়নি'); } t.value = ''; render(); }
-  if (k === 'banner' && t.files[0]) { toast('আপলোড হচ্ছে…'); try { await addDoc(collection(db, 'banners'), { image: await fileToData(t.files[0], 1400, .8), link: '', active: true, createdAt: serverTimestamp() }); toast('ব্যানার যোগ হয়েছে ✅'); } catch (er) { toast('আপলোড হয়নি: ' + er.code); } }
+  if (k === 'banner' && t.files[0]) { toast('আপলোড হচ্ছে…'); try { await addDoc(collection(db, 'banners'), { image: await uploadBanner(t.files[0]), link: '', active: true, createdAt: serverTimestamp() }); toast('ব্যানার যোগ হয়েছে ✅'); } catch (er) { toast('আপলোড হয়নি: ' + er.code); } }
   if (k === 'popup' && t.files[0]) { toast('আপলোড হচ্ছে…'); try { await addDoc(collection(db, 'banners'), { image: await fileTo50(t.files[0]), kind: 'popup', link: '', active: true, createdAt: serverTimestamp() }); toast('পপআপ এড যোগ হয়েছে ✅'); } catch (er) { toast('আপলোড হয়নি: ' + er.code); } }
   if (k === 'blink') updateDoc(doc(db, 'banners', t.dataset.id), { link: t.value.trim() });
   if (k === 'brandlogo' && t.files[0]) { const f = t.files[0], nm = t.dataset.brand; t.value = ''; toast('লোগো আপলোড হচ্ছে…'); try { const url = await uploadImg(f); await saveBrands(brandCfg().map(x => x.name === nm ? { ...x, logo: url } : x)); } catch (er) { toast('আপলোড হয়নি: ' + (er.message || er.code)); } }
