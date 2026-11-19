@@ -46,12 +46,36 @@ module.exports = async (req, res) => {
   }
 
   const body = typeof req.body === 'string' ? JSON.parse(req.body || '{}') : (req.body || {});
-  const m = String(body.file || '').match(/^data:image\/(jpeg|png|webp);base64,([A-Za-z0-9+/=]+)$/);
-  if (!m || m[2].length > 1500000) return res.status(400).json({ error: 'ছবি ঠিক নেই বা বড়' });
   const name = String(body.fileName || 'img.jpg').replace(/[^A-Za-z0-9._-]/g, '_').slice(0, 80);
 
+  // ১) অন্য সাইটের লিংক দিলে ImageKit নিজেই সেটা ডাউনলোড করে নেবে (শুধু ladyglamourwh.com অনুমোদিত)
+  // ২) নাহলে আগের মতো base64 ছবি
+  let fileVal;
+  if (body.url) {
+    let u;
+    try { u = new URL(String(body.url)); } catch (e) { return res.status(400).json({ error: 'লিংক ঠিক নেই' }); }
+    if (u.protocol !== 'https:' || !/(^|\.)ladyglamourwh\.com$/i.test(u.hostname)) return res.status(400).json({ error: 'এই সাইটের লিংক অনুমোদিত নয়' });
+    fileVal = u.href;
+    // fetchOnly: সার্ভার ছবিটা ডাউনলোড করে ব্রাউজারকে দেয় (ব্রাউজার সেটা ৫০KB-তে কমপ্রেস করে আবার আপলোড করবে)
+    if (body.fetchOnly) {
+      try {
+        const r = await fetch(u.href, { headers: { 'User-Agent': 'Mozilla/5.0', Accept: 'image/*' } });
+        if (!r.ok) return res.status(502).json({ error: 'ছবি ডাউনলোড হয়নি (' + r.status + ')' });
+        const ct = String(r.headers.get('content-type') || '').split(';')[0].toLowerCase();
+        const buf = Buffer.from(await r.arrayBuffer());
+        if (!/^image\/(jpeg|png|webp)$/.test(ct)) return res.status(415).json({ error: 'ছবির ধরন সাপোর্ট করে না' });
+        if (buf.length > 3000000) return res.status(413).json({ error: 'ছবি বেশি বড়' });
+        return res.status(200).json({ data: 'data:' + ct + ';base64,' + buf.toString('base64') });
+      } catch (e) { return res.status(502).json({ error: e.message }); }
+    }
+  } else {
+    const m = String(body.file || '').match(/^data:image\/(jpeg|png|webp);base64,([A-Za-z0-9+/=]+)$/);
+    if (!m || m[2].length > 1500000) return res.status(400).json({ error: 'ছবি ঠিক নেই বা বড়' });
+    fileVal = m[2];
+  }
+
   const form = new FormData();
-  form.append('file', m[2]);
+  form.append('file', fileVal);
   form.append('fileName', name);
   form.append('folder', '/azaan');
   form.append('useUniqueFileName', 'true');
