@@ -564,7 +564,7 @@ function vImport() {
     <select class="inp !w-auto" data-in="impmode"><option value="add" ${impMode === 'add' ? 'selected' : ''}>➕ যোগ করুন (JSON এর প্রোডাক্ট সাইটে যোগ হবে)</option><option value="remove" ${impMode === 'remove' ? 'selected' : ''}>➖ বাদ দিন (JSON এ থাকা প্রোডাক্ট ডিলিট হবে)</option></select>
     ${impMode === 'add' ? `<label class="flex items-center gap-2"><input type="checkbox" data-in="impupd" ${impUpdate ? 'checked' : ''}> আগে থেকে থাকলে আপডেট করুন (না চাপলে বাদ যাবে)</label>` : ''}
   </div>
-  <div class="flex flex-wrap gap-3 mt-3 items-center"><input type="file" accept=".json,application/json" data-in="seed"><button class="btn2" data-act="impsample">⬇ নমুনা JSON নামান</button></div>
+  <div class="flex flex-wrap gap-3 mt-3 items-center"><input type="file" accept=".json,application/json" data-in="seed"><button class="btn2" data-act="impsample">⬇ নমুনা JSON নামান</button><button class="btn2" data-act="lgfetch">🌐 ladyglamour থেকে সরাসরি আনুন (মোবাইলে)</button></div>
   <details class="mt-3 text-xs text-black/70"><summary class="cursor-pointer font-semibold">যে যে ফরম্যাট চলবে</summary>
   <pre class="mt-2 p-2 bg-black/5 rounded-lg overflow-x-auto" dir="ltr">1) ক্যাটাগরি-ওয়াইজ:
 { "Combs": [ { "name": "Wide Teeth Comb", "offer": 250, "regular": 350 } ],
@@ -748,7 +748,7 @@ function vSyncBar() {
   return `<div class="card p-4 mb-3 text-sm"><p class="font-semibold">⚡ সাইটের ক্যাটালগ (রিড কমানোর ব্যবস্থা)</p>
   <p class="text-xs text-black/60 mt-1">প্রোডাক্ট বদলালে সাইটের জন্য হালকা তালিকা নিজে থেকে তৈরি হয়, তাই ভিজিটরের রিড অনেক কম লাগে। সাধারণত কিছু করতে হবে না।</p>
   <p id="syncStat" class="text-xs font-semibold mt-2">${esc(syncMsg || 'অপেক্ষা করছে…')}</p>
-  <div class="flex flex-wrap gap-2 mt-2"><button class="btn2" data-act="syncnow">🔄 এখনই আপডেট করুন</button>${heavy ? `<button class="btn2" data-act="migimgs">☁ পুরনো ${bn(heavy)}টি প্রোডাক্টের ছবি Cloudinary-তে সরান</button>` : ''}${ext ? `<button class="btn2" data-act="migext">🌐 অন্য সাইটের ${bn(ext)}টি প্রোডাক্টের ছবি নিজের Cloudinary-তে আনুন (টেলিগ্রামে ছবি পাঠাতে দরকার)</button>` : ''}</div>${vNoCld()}</div>`;
+  <div class="flex flex-wrap gap-2 mt-2"><button class="btn2" data-act="syncnow">🔄 এখনই আপডেট করুন</button>${heavy ? `<button class="btn2" data-act="migimgs">☁ পুরনো ${bn(heavy)}টি প্রোডাক্টের ছবি Cloudinary-তে সরান</button>` : ''}${ext ? `<button class="btn2" data-act="migext">🌐 অন্য সাইটের ${bn(ext)}টি প্রোডাক্টের ছবি ImageKit-এ আনুন (টেলিগ্রামে ছবি পাঠাতে দরকার)</button>` : ''}</div>${vNoCld()}</div>`;
 }
 // যেসব প্রোডাক্টের ছবি Cloudinary-তে নেই, ক্যাটাগরি অনুযায়ী সাজানো (এখান থেকেই এডিট করা যায়)
 function noCldStatus(p) {
@@ -782,23 +782,157 @@ async function migrateImages() {
   toast(bn(done) + 'টি সরানো হয়েছে ✅' + (fail ? ` · ${bn(fail)}টি হয়নি: ${err}` : ''));
 }
 
-// অন্য সাইটের লিংক করা ছবি (যেমন ইমপোর্টের সময় আসা) নিজের Cloudinary-তে কপি করে; না পারলে আগের লিংকই থাকে
+// অন্য সাইটের লিংক করা ছবি ImageKit-এ আনে (সার্ভার নিজে ডাউনলোড করে); না পারলে আগের লিংকই থাকে
+async function ikFromUrl(src) {
+  const tk = await auth.currentUser.getIdToken();
+  const post = async b => { const res = await fetch('/api/upload', { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + tk }, body: JSON.stringify(b) }); const j = await res.json().catch(() => ({})); if (!res.ok) throw new Error(j.error || 'upload failed'); return j; };
+  try {   // ১) সার্ভার দিয়ে ডাউনলোড → ব্রাউজারে ৫০KB-তে কমপ্রেস → ImageKit
+    const d = (await post({ url: src, fetchOnly: true })).data;
+    const small = await blobToData(await compress50(await (await fetch(d)).blob()));
+    const j = await post({ file: small, fileName: 'lg-' + Date.now() + '.jpg' });
+    if (j.url) return j.url;
+  } catch (e) { /* নিচে সরাসরি */ }
+  const j = await post({ url: src, fileName: 'lg-' + Date.now() + '.jpg' });   // ২) না হলে ImageKit নিজে এনে রাখবে (কমপ্রেস ছাড়া)
+  if (!j.url) throw new Error('upload failed');
+  return j.url;
+}
+const LG = (() => {
+const SITE = 'https://ladyglamourwh.com/wp-json/wc/store/v1/products';
+const HDR = { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36', Accept: 'application/json', 'Accept-Language': 'en-US,en;q=0.9' };
+const SHADE = /shade|colou?r|tone|রঙ|শেড/i, SIZE = /size|ml|gram|weight|volume|pack|qty|quantity|সাইজ|ওজন/i;
+
+async function getJ(url, tries = 3) {
+  let last = 'failed';
+  for (let i = 0; i < tries; i++) {
+    try {
+      const r = await fetch(url, {});
+      if (r.ok) return { j: await r.json(), pages: +r.headers.get('x-wp-totalpages') || 1 };
+      last = 'HTTP ' + r.status;
+      if (![403, 429, 503].includes(r.status)) break;
+    } catch (e) { last = e.message; }
+    await new Promise((ok) => setTimeout(ok, 800 * (i + 1)));
+  }
+  throw new Error(last);
+}
+const clean = (s) => String(s || '').replace(/<[^>]+>/g, '').replace(/&amp;/g, '&').replace(/&#8211;/g, '-').replace(/&#038;/g, '&').replace(/&#8217;/g, "'").trim();
+const money = (pr, k) => { try { const v = pr[k]; if (v === undefined || v === null || v === '') return 0; return Math.round(+v / Math.pow(10, +pr.currency_minor_unit || 0) * 100) / 100; } catch (e) { return 0; } };
+const MAXI = 15;
+function idx(images, src) { if (!src) return 0; const i = images.indexOf(src); if (i >= 0) return i + 1; if (images.length < MAXI) { images.push(src); return images.length; } return 0; }
+
+async function convert(p) {
+  const pr = p.prices || {};
+  const images = (p.images || []).map((i) => i.src).filter(Boolean);
+  const cats = (p.categories || []).map((c) => clean(c.name));
+  let brands = (p.brands || []).map((b) => clean(b.name));
+  if (!brands.length) (p.attributes || []).forEach((a) => { if (/brand|ব্র্যান্ড/i.test(a.name || '')) brands = (a.terms || []).map((t) => clean(t.name)); });
+  const out = { id: p.id, name: clean(p.name), cat: cats[0] || 'Makeup', offer: money(pr, 'price'), regular: money(pr, 'regular_price') || money(pr, 'price'), stock: 50, active: true, brand: brands[0] || '', images };
+  const vl = p.variations || [];
+  if (p.type === 'variable' && vl.length) {
+    const rows = [];
+    for (let i = 0; i < vl.length; i += 5) {
+      const part = await Promise.all(vl.slice(i, i + 5).map(async (v) => {
+        try {
+          const { j } = await getJ(SITE + '/' + v.id, 2);
+          const vp = j.prices || {}, o = money(vp, 'price');
+          const attrs = {}; (v.attributes || []).forEach((a) => { attrs[clean(a.name)] = clean(a.value); });
+          return { attrs, offer: o, regular: money(vp, 'regular_price') || o, src: ((j.images || [])[0] || {}).src };
+        } catch (e) { return null; }
+      }));
+      part.filter(Boolean).forEach((r) => { r.img = idx(images, r.src); rows.push(r); });
+    }
+    const keys = []; rows.forEach((r) => Object.keys(r.attrs).forEach((k) => { if (!keys.includes(k)) keys.push(k); }));
+    let sk = null, zk = null;
+    keys.forEach((k) => { if (SHADE.test(k) && !sk) sk = k; else if (SIZE.test(k) && !zk) zk = k; });
+    if (!sk && !zk && keys.length) { sk = keys[0]; zk = keys[1] || null; }
+    const lab = (r, k) => (k ? r.attrs[k] || '' : '');
+    const V = (name, r) => ({ name, offer: r.offer, regular: r.regular, ...(r.img ? { img: r.img } : {}) });
+    const Sh = (name, r) => ({ name, color: '', ...(r.img ? { img: r.img } : {}) });
+    let variants = [], shades = [];
+    if (sk && zk) {
+      const bs = {}; rows.forEach((r) => { const s = lab(r, zk); if (s && (!bs[s] || r.offer < bs[s].offer)) bs[s] = r; });
+      variants = Object.keys(bs).filter((s) => bs[s].offer > 0).map((s) => V(s, bs[s]));
+      const seen = new Set(); rows.forEach((r) => { const s = lab(r, sk); if (s && !seen.has(s)) { seen.add(s); shades.push(Sh(s, r)); } });
+    } else if (zk) {
+      const seen = new Set(); rows.forEach((r) => { const s = lab(r, zk); if (s && !seen.has(s) && r.offer > 0) { seen.add(s); variants.push(V(s, r)); } });
+    } else if (sk) {
+      const distinct = new Set(rows.map((r) => r.offer)), seen = new Set();
+      rows.forEach((r) => { const s = lab(r, sk); if (!s || seen.has(s)) return; if (distinct.size > 1) { if (r.offer > 0) { seen.add(s); variants.push(V(s, r)); } } else { seen.add(s); shades.push(Sh(s, r)); } });
+    }
+    if (variants.length) { const m = variants.reduce((a, b) => (b.offer < a.offer ? b : a)); out.offer = m.offer; out.regular = m.regular; out.variants = variants.slice(0, 30); }
+    if (shades.length) out.shades = shades.slice(0, 40);
+  }
+  return out;
+}
+
+
+return { getJ, convert, SITE };
+})();
+
+// ladyglamour থেকে সব প্রোডাক্ট (শেড/ভ্যারিয়েন্ট/দামসহ) আনে। আগে আপনার ফোনের ব্রাউজার থেকে (ব্লক হয় না), না হলে সার্ভার দিয়ে। শেষে সাধারণ JSON ইমপোর্টের প্রিভিউ খোলে
+async function lgFetchAll() {
+  if (!confirm('ladyglamourwh.com থেকে সব প্রোডাক্ট আনা হবে। কয়েক মিনিট লাগতে পারে, পেজ বন্ধ করবেন না। শুরু করবেন?')) return;
+  const all = []; let mode = 'browser';
+  const PER = 20;
+  try {
+    // ১) ফোনের ব্রাউজার থেকে সরাসরি
+    try {
+      let page = 1;
+      while (true) {
+        let list;
+        try { list = (await LG.getJ(LG.SITE + '?per_page=' + PER + '&page=' + page)).j; }
+        catch (e) { if (page > 1) break; throw e; }   // শেষ পেজের পরের পেজ এরর দিলে থামে
+        if (!Array.isArray(list) || !list.length) break;
+        for (const p of list) { const o = await LG.convert(p); if (o.offer > 0 || (o.variants && o.variants.length)) all.push(o); }
+        toast('ব্রাউজার থেকে আনা হচ্ছে… পেজ ' + bn(page) + ' · ' + bn(all.length) + 'টি প্রোডাক্ট', 4000);
+        if (list.length < PER) break;
+        page++;
+      }
+    } catch (e) {
+      if (all.length) throw e;
+      mode = 'server';   // ২) ব্রাউজার থেকে না পারলে সার্ভার দিয়ে
+    }
+    if (mode === 'server') {
+      const tk = await auth.currentUser.getIdToken();
+      let page = 1, pages = 1;
+      while (page <= pages) {
+        let j = null, last = '';
+        for (let t = 0; t < 3 && !j; t++) {
+          const res = await fetch('/api/lg-products', { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + tk }, body: JSON.stringify({ page }) });
+          const r = await res.json().catch(() => ({}));
+          if (res.ok && r.products) j = r; else { last = r.error || ('HTTP ' + res.status); await new Promise(o => setTimeout(o, 1500)); }
+        }
+        if (!j) throw new Error('ব্রাউজার ও সার্ভার দুটো দিয়েই আনা যায়নি — ' + last + ' (পেজ ' + page + ')');
+        pages = j.pages || 1; all.push(...j.products);
+        toast('সার্ভার থেকে আনা হচ্ছে… পেজ ' + bn(page) + '/' + bn(pages) + ' · ' + bn(all.length) + 'টি প্রোডাক্ট', 4000);
+        page++;
+      }
+    }
+  } catch (e) { return toast('আনা যায়নি: ' + (e.message || e), 8000); }
+  if (!all.length) return toast('কোনো প্রোডাক্ট পাওয়া যায়নি');
+  toast(bn(all.length) + 'টি প্রোডাক্ট এসেছে ✅ — প্রিভিউ দেখুন', 5000);
+  impStart(new File([JSON.stringify(all)], 'ladyglamour-live.json', { type: 'application/json' }));
+}
 async function migrateExternal() {
   const todo = D.products.filter(p => (p.images || []).some(isExt));
   if (!todo.length) return toast('অন্য সাইটের কোনো ছবি নেই ✅');
-  if (!confirm(bn(todo.length) + 'টি প্রোডাক্টের ছবি নিজের Cloudinary-তে আনা হবে। পেজ বন্ধ করবেন না। শুরু করবেন?')) return;
-  let ok = 0, fail = 0, err = '', n = 0;
-  for (const p of todo) {
-    const imgs = []; let changed = false;
-    for (const src of p.images) {
-      if (!isExt(src)) { imgs.push(src); continue; }
-      try { imgs.push(await uploadCld(src)); ok++; changed = true; } catch (e) { fail++; err = e.message; imgs.push(src); }
+  if (!confirm(bn(todo.length) + 'টি প্রোডাক্টের ছবি ImageKit-এ আনা হবে। পেজ বন্ধ করবেন না। শুরু করবেন?')) return;
+  let ok = 0, fail = 0, err = '', n = 0, idx = 0;
+  async function worker() {
+    while (idx < todo.length) {
+      const p = todo[idx++];
+      const imgs = []; let changed = false;
+      for (const src of p.images) {
+        if (!isExt(src)) { imgs.push(src); continue; }
+        try { imgs.push(await ikFromUrl(src)); ok++; changed = true; } catch (e) { fail++; err = e.message; imgs.push(src); }
+      }
+      if (changed) { try { await updateDoc(doc(db, 'products', p.id), { images: imgs, ...(isLG(p) ? { source: 'ladyglamour' } : {}) }); } catch (e) { err = e.code || e.message; } }
+      toast('ছবি আনা হচ্ছে… ' + bn(++n) + '/' + bn(todo.length));
     }
-    if (changed) { try { await updateDoc(doc(db, 'products', p.id), { images: imgs, ...(isLG(p) ? { source: 'ladyglamour' } : {}) }); } catch (e) { err = e.code || e.message; } }
-    toast('ছবি আনা হচ্ছে… ' + bn(++n) + '/' + bn(todo.length));
   }
-  toast(bn(ok) + 'টি ছবি এসেছে ✅' + (fail ? ` · ${bn(fail)}টি আনা যায়নি (${err})` : ''), 6000);
+  await Promise.all([worker(), worker(), worker(), worker()]);
+  toast(bn(ok) + 'টি ছবি ImageKit-এ এসেছে ✅' + (fail ? ` · ${bn(fail)}টি আনা যায়নি (${err})` : ''), 6000);
 }
+
 
 /* ---------- Actions ---------- */
 
@@ -1012,6 +1146,7 @@ const A = {
   syncnow: () => { if (!firstLoad.products) return toast('ডাটা লোড হচ্ছে, একটু পরে চেষ্টা করুন'); syncCatalog(true); },
   migimgs: migrateImages,
   migext: migrateExternal,
+  lgfetch: lgFetchAll,
   impgo: impRun,
   impsample: impSample,
   rvnew: () => rvModal(),
