@@ -871,7 +871,7 @@ return { getJ, convert, SITE };
 // ladyglamour থেকে সব প্রোডাক্ট (শেড/ভ্যারিয়েন্ট/দামসহ) আনে। আগে আপনার ফোনের ব্রাউজার থেকে (ব্লক হয় না), না হলে সার্ভার দিয়ে। শেষে সাধারণ JSON ইমপোর্টের প্রিভিউ খোলে
 async function lgFetchAll() {
   if (!confirm('ladyglamourwh.com থেকে সব প্রোডাক্ট আনা হবে। কয়েক মিনিট লাগতে পারে, পেজ বন্ধ করবেন না। শুরু করবেন?')) return;
-  const all = []; let mode = 'browser';
+  const all = []; let mode = 'browser', bErr = '';
   const PER = 20;
   try {
     // ১) ফোনের ব্রাউজার থেকে সরাসরি
@@ -889,7 +889,7 @@ async function lgFetchAll() {
       }
     } catch (e) {
       if (all.length) throw e;
-      mode = 'server';   // ২) ব্রাউজার থেকে না পারলে সার্ভার দিয়ে
+      bErr = (e && e.message) || String(e); mode = 'server';   // ২) ব্রাউজার থেকে না পারলে সার্ভার দিয়ে
     }
     if (mode === 'server') {
       const tk = await auth.currentUser.getIdToken();
@@ -901,7 +901,7 @@ async function lgFetchAll() {
           const r = await res.json().catch(() => ({}));
           if (res.ok && r.products) j = r; else { last = r.error || ('HTTP ' + res.status); await new Promise(o => setTimeout(o, 1500)); }
         }
-        if (!j) throw new Error('ব্রাউজার ও সার্ভার দুটো দিয়েই আনা যায়নি — ' + last + ' (পেজ ' + page + ')');
+        if (!j) throw new Error('ব্রাউজার: ' + (bErr || '?') + ' | সার্ভার: ' + last + (/404/.test(last) ? ' (api/lg-products.js ডিপ্লয় হয়নি?)' : '') + ' (পেজ ' + page + ')');
         pages = j.pages || 1; all.push(...j.products);
         toast('সার্ভার থেকে আনা হচ্ছে… পেজ ' + bn(page) + '/' + bn(pages) + ' · ' + bn(all.length) + 'টি প্রোডাক্ট', 4000);
         page++;
