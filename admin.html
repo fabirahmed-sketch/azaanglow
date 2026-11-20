@@ -53,7 +53,7 @@
 <script type="module">
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
 import { getAuth, signInWithEmailAndPassword, signOut, onAuthStateChanged, updatePassword } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
-import { getFirestore, collection, doc, setDoc, addDoc, updateDoc, deleteDoc, onSnapshot, getDoc, query, orderBy, serverTimestamp, increment, writeBatch } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
+import { getFirestore, collection, doc, setDoc, addDoc, updateDoc, deleteDoc, onSnapshot, getDoc, query, orderBy, serverTimestamp, increment, writeBatch, getDocs, where, documentId } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
 
 const app = initializeApp(window.FIREBASE_CONFIG), auth = getAuth(app), db = getFirestore(app);
 const $ = s => document.querySelector(s);
@@ -64,7 +64,7 @@ const dt = t => t?.toDate ? t.toDate().toLocaleString('bn-BD', {dateStyle:'mediu
 const toast = (m, ms = 2500) => { const t = $('#toast'); t.textContent = m; t.classList.remove('hidden'); clearTimeout(toast.t); toast.t = setTimeout(() => t.classList.add('hidden'), ms); };
 const ST = { pending:['পেন্ডিং','bg-yellow-100 text-yellow-800'], confirmed:['কনফার্ম','bg-blue-100 text-blue-800'], shipped:['শিপড','bg-purple-100 text-purple-800'], delivered:['ডেলিভারড','bg-green-100 text-green-800'], cancelled:['ক্যান্সেল','bg-red-100 text-red-800'] };
 const badge = s => `<span class="px-2 py-0.5 rounded-full text-xs font-bold ${ST[s]?.[1] || ''}">${ST[s]?.[0] || s}</span>`;
-const TABS = [['dash','ড্যাশবোর্ড'],['products','প্রোডাক্ট'],['sections','ফিচারড সেকশন ও ক্যাটাগরি'],['home','হোমপেজ সেকশন'],['brands','ব্র্যান্ড'],['orders','অর্ডার'],['reviews','রিভিউ'],['customers','কাস্টমার'],['promos','প্রমো কোড'],['banners','ব্যানার'],['offers','অফার আইকন'],['popups','পপআপ এড'],['settings','সেটিংস']];
+const TABS = [['dash','ড্যাশবোর্ড'],['analytics','📊 অ্যানালিটিক্স'],['products','প্রোডাক্ট'],['sections','ফিচারড সেকশন ও ক্যাটাগরি'],['home','হোমপেজ সেকশন'],['brands','ব্র্যান্ড'],['orders','অর্ডার'],['reviews','রিভিউ'],['customers','কাস্টমার'],['promos','প্রমো কোড'],['banners','ব্যানার'],['offers','অফার আইকন'],['popups','পপআপ এড'],['settings','সেটিংস']];
 
 const D = { products:[], orders:[], reviews:[], promos:[], banners:[], settings:{} };
 let tab = 'dash', oFilter = 'all', oSearch = '', pSearch = '', pShow = 30, pFilter = 'all', secQ = {}, autoBusy = false, form = {}, soundOn = false, firstLoad = {}, unsubs = [];
@@ -218,7 +218,7 @@ $('#modal').addEventListener('mousedown', e => { if (e.target.id === 'modal') cl
 /* ---------- Views ---------- */
 function render() {
   $('#tabs').innerHTML = TABS.map(([k, n]) => `<button data-act="tab" data-v="${k}" class="tab shrink-0 px-3 py-1.5 rounded-full border bg-white ${tab === k ? 'on' : ''}">${n}${k === 'reviews' && D.reviews.filter(r => r.status === 'pending').length ? ` (${bn(D.reviews.filter(r => r.status === 'pending').length)})` : ''}${k === 'orders' && D.orders.filter(o => o.status === 'pending').length ? ` (${bn(D.orders.filter(o => o.status === 'pending').length)})` : ''}</button>`).join('');
-  $('#view').innerHTML = ({ dash: vDash, products: vProducts, sections: vSections, home: vHome, brands: vBrands, orders: vOrders, reviews: vReviews, customers: vCustomers, promos: vPromos, banners: vBanners, offers: vOffers, popups: vPopups, settings: vSettings })[tab]();
+  $('#view').innerHTML = ({ dash: vDash, analytics: vAnalytics, products: vProducts, sections: vSections, home: vHome, brands: vBrands, orders: vOrders, reviews: vReviews, customers: vCustomers, promos: vPromos, banners: vBanners, offers: vOffers, popups: vPopups, settings: vSettings })[tab]();
 }
 function vDash() {
   const today = new Date().toDateString(), live = D.orders.filter(o => o.status !== 'cancelled');
@@ -232,6 +232,91 @@ function vDash() {
     <div class="card p-4"><h3 class="font-bold mb-2">সর্বশেষ অর্ডার</h3>${D.orders.slice(0, 6).map(o => `<button data-act="order" data-id="${o.id}" class="w-full flex justify-between items-center py-2 border-b text-left text-sm"><span>${esc(o.orderNo)} · ${esc(o.name)}</span><span>${tk(o.total)} ${badge(o.status)}</span></button>`).join('') || '<p class="text-sm text-black/50">এখনো অর্ডার নেই</p>'}</div>
     <div class="card p-4"><h3 class="font-bold mb-2">স্টক কম (৫ বা কম)</h3>${low.map(p => `<button data-act="pedit" data-id="${p.id}" class="w-full flex justify-between py-2 border-b text-sm text-left"><span>${esc(p.name)}</span><b class="${+p.stock <= 0 ? 'red' : ''}">${bn(+p.stock || 0)}</b></button>`).join('') || '<p class="text-sm text-black/50">সব প্রোডাক্টের স্টক ঠিক আছে</p>'}</div>
   </div>`;
+}
+/* ---------- ওয়েবসাইট অ্যানালিটিক্স (ডাটা আসে analytics/YYYY-MM-DD ডকুমেন্ট থেকে; সাইট থেকে জমা হয়) ---------- */
+const AN = { range: 7, docs: [], loading: false, err: '', at: 0, sort: 'v', all: false };
+const dayKey = t => new Date(t + 6 * 36e5).toISOString().slice(0, 10);
+const nb = n => bn((+n || 0).toLocaleString('en-US'));
+const pct = (a, b) => b > 0 ? bn((a / b * 100).toFixed(1).replace(/\.0$/, '')) + '%' : '—';
+const n0 = v => +v || 0;
+async function anLoad() {
+  if (AN.loading) return; AN.loading = true; AN.err = ''; render();
+  try {
+    const to = dayKey(Date.now()), from = dayKey(Date.now() - (AN.range - 1) * 864e5);
+    const s = await getDocs(query(collection(db, 'analytics'), where(documentId(), '>=', from), where(documentId(), '<=', to)));
+    AN.docs = s.docs.map(d => ({ ...d.data(), day: d.id })).sort((a, b) => a.day < b.day ? -1 : 1); AN.at = Date.now();
+  } catch (e) { AN.err = e.code || e.message || 'error'; }
+  AN.loading = false; render();
+}
+function anSum() {
+  const T = { pv: 0, uv: 0, nv: 0, s: 0, vc: 0, atc: 0, ic: 0, pur: 0, rev: 0, wa: 0 }, dev = { m: 0, t: 0, d: 0 }, src = {}, hr = Array(24).fill(0), prod = {}, byDay = {};
+  AN.docs.forEach(d => {
+    ['pv', 'uv', 'nv', 's'].forEach(k => T[k] += n0(d[k]));
+    const f = d.f || {}; ['vc', 'atc', 'ic', 'pur', 'rev', 'wa'].forEach(k => T[k] += n0(f[k]));
+    Object.entries(d.dev || {}).forEach(([k, v]) => dev[k] = (dev[k] || 0) + n0(v));
+    Object.entries(d.src || {}).forEach(([k, v]) => src[k] = (src[k] || 0) + n0(v));
+    Object.entries(d.hr || {}).forEach(([k, v]) => { if (+k >= 0 && +k < 24) hr[+k] += n0(v); });
+    Object.entries(d.prod || {}).forEach(([id, p]) => { const x = prod[id] || (prod[id] = { id, n: '', v: 0, c: 0, o: 0 }); x.v += n0(p.v); x.c += n0(p.c); x.o += n0(p.o); if (p.n) x.n = p.n; });
+    byDay[d.day] = d;
+  });
+  const days = Array.from({ length: AN.range }, (_, i) => dayKey(Date.now() - (AN.range - 1 - i) * 864e5));
+  return { T, dev, src, hr, prod: Object.values(prod), byDay, days };
+}
+const SRC_N = { direct: 'সরাসরি / লিংক', facebook: 'ফেসবুক', instagram: 'ইনস্টাগ্রাম', google: 'গুগল', youtube: 'ইউটিউব', whatsapp: 'হোয়াটসঅ্যাপ', telegram: 'টেলিগ্রাম', tiktok: 'টিকটক', messenger: 'মেসেঞ্জার', bing: 'বিং', other: 'অন্যান্য' };
+function anBars(rows, color = '#8dc63f') {   /* rows: [[label, value, ...]] — অনুভূমিক বার */
+  const mx = Math.max(1, ...rows.map(r => r[1])), tot = rows.reduce((a, r) => a + r[1], 0);
+  return rows.length ? rows.map(([l, v]) => `<div class="text-sm mb-1.5"><div class="flex justify-between"><span>${esc(l)}</span><span><b>${nb(v)}</b> <span class="text-black/50">(${pct(v, tot)})</span></span></div><div class="h-2 rounded bg-black/5"><div class="h-2 rounded" style="width:${Math.max(2, v / mx * 100)}%;background:${color}"></div></div></div>`).join('') : '<p class="text-sm text-black/50">এখনো ডাটা নেই</p>';
+}
+function vAnalytics() {
+  const rangeBtn = ([v, t]) => `<button data-act="anrange" data-v="${v}" class="tab px-3 py-1.5 rounded-full border bg-white text-sm ${AN.range === v ? 'on' : ''}">${t}</button>`;
+  const head = `<div class="flex flex-wrap items-center gap-2 mb-3">${[[1, 'আজ'], [7, 'শেষ ৭ দিন'], [30, 'শেষ ৩০ দিন'], [90, 'শেষ ৯০ দিন']].map(rangeBtn).join('')}
+    <button data-act="anrefresh" class="btn2 ml-auto">🔄 রিফ্রেশ</button></div>`;
+  if (AN.err === 'permission-denied') return head + `<div class="card p-4 text-sm"><h3 class="font-bold mb-2 red">Firebase Rules এ অনুমতি দিতে হবে</h3>
+    <p class="mb-2">Firebase Console → Firestore Database → Rules এ <code>match /databases/{database}/documents {</code> এর ভেতরে নিচের অংশটি যোগ করে <b>Publish</b> করুন:</p>
+    <pre class="bg-black/5 rounded-lg p-3 text-xs overflow-x-auto select-all">match /analytics/{day} {
+  allow read: if request.auth != null;
+  allow create, update: if day.matches('[0-9]{4}-[0-9]{2}-[0-9]{2}');
+  allow delete: if false;
+}</pre><p class="mt-2 text-black/60">এতে সাইটের ভিজিটর শুধু দিনের গণনা বাড়াতে পারবে; পড়তে পারবে শুধু লগইন করা অ্যাডমিন।</p></div>`;
+  if (AN.err) return head + `<div class="card p-4 text-sm red">ডাটা লোড হয়নি: ${esc(AN.err)}</div>`;
+  if (AN.loading && !AN.at) return head + '<div class="card p-6 text-center text-sm text-black/60">লোড হচ্ছে…</div>';
+  const { T, dev, src, hr, prod, byDay, days } = anSum();
+  if (!AN.docs.length) return head + '<div class="card p-6 text-sm text-black/70">এই সময়ে এখনো কোনো ডাটা জমা হয়নি। নতুন index.html আপলোডের পর সাইটে ভিজিট শুরু হলেই এখানে দেখা যাবে। নিজে সাইট খুলে একটা প্রোডাক্ট দেখে টেস্ট করতে পারেন, তারপর "রিফ্রেশ" চাপুন।</div>';
+  const box = (t, v, sub = '') => `<div class="card p-3"><p class="text-xs text-black/60">${t}</p><p class="text-2xl font-bold mt-0.5">${v}</p>${sub ? `<p class="text-[11px] text-black/50 mt-0.5">${sub}</p>` : ''}</div>`;
+  const kpis = `<div class="grid grid-cols-2 md:grid-cols-4 gap-3">
+    ${box('ভিজিটর', nb(T.uv), 'প্রতিদিনের ইউনিক গণনা')}${box('ভিজিট (সেশন)', nb(T.s))}${box('পেজ লোড', nb(T.pv))}${box('নতুন ভিজিটর', nb(T.nv), 'এই ডিভাইসে প্রথমবার')}
+    ${box('প্রোডাক্ট দেখা', nb(T.vc))}${box('কার্টে যোগ', nb(T.atc), 'ভিউ থেকে ' + pct(T.atc, T.vc))}${box('চেকআউটে গেছে', nb(T.ic))}${box('অর্ডার', nb(T.pur), tk(T.rev) + ' · ভিজিট থেকে ' + pct(T.pur, T.s))}</div>`;
+  /* দৈনিক ভিজিট বার-চার্ট */
+  const mxS = Math.max(1, ...days.map(d => n0(byDay[d]?.s)));
+  const showLbl = i => days.length <= 31 || i % 7 === 0;
+  const chart = `<div class="card p-4 mt-3"><h3 class="font-bold mb-3">দিনভিত্তিক ভিজিট</h3>
+    <div class="flex items-end gap-[2px] h-40">${days.map((d, i) => { const x = byDay[d] || {}, s = n0(x.s), f = x.f || {}; return `<div class="flex-1 min-w-0 flex flex-col justify-end items-center h-full" title="${bn(d.slice(8) + '/' + d.slice(5, 7))} — ভিজিট ${nb(s)}, প্রোডাক্ট দেখা ${nb(f.vc)}, কার্টে ${nb(f.atc)}, অর্ডার ${nb(f.pur)}"><div class="w-full rounded-t" style="height:${s ? Math.max(3, s / mxS * 100) : 0}%;background:#8dc63f"></div></div>`; }).join('')}</div>
+    <div class="flex gap-[2px] mt-1">${days.map((d, i) => `<div class="flex-1 min-w-0 text-[9px] text-center text-black/50 overflow-visible whitespace-nowrap">${showLbl(i) ? bn(d.slice(8)) : ''}</div>`).join('')}</div>
+    <details class="mt-3 text-sm"><summary class="cursor-pointer font-semibold">দিনের হিসাব (টেবিল)</summary><div class="overflow-x-auto mt-2"><table class="w-full text-left text-xs"><thead><tr class="border-b text-black/60"><th class="py-1">তারিখ</th><th>ভিজিটর</th><th>ভিজিট</th><th>প্রোডাক্ট দেখা</th><th>কার্টে</th><th>অর্ডার</th><th>বিক্রি</th></tr></thead><tbody>${[...days].reverse().map(d => { const x = byDay[d] || {}, f = x.f || {}; return `<tr class="border-b"><td class="py-1">${bn(d.slice(8) + '/' + d.slice(5, 7))}</td><td>${nb(x.uv)}</td><td>${nb(x.s)}</td><td>${nb(f.vc)}</td><td>${nb(f.atc)}</td><td>${nb(f.pur)}</td><td>${tk(f.rev)}</td></tr>`; }).join('')}</tbody></table></div></details></div>`;
+  /* ধাপে ধাপে (ফানেল) */
+  const steps = [['ভিজিট (সেশন)', T.s], ['প্রোডাক্ট দেখা', T.vc], ['কার্টে যোগ', T.atc], ['চেকআউটে গেছে', T.ic], ['অর্ডার হয়েছে', T.pur]], mxF = Math.max(1, ...steps.map(s => s[1]));
+  const funnel = `<div class="card p-4"><h3 class="font-bold mb-1">ক্রয়ের ধাপ</h3><p class="text-xs text-black/50 mb-3">একজন একাধিক প্রোডাক্ট দেখলে বা কার্টে দিলে গণনা একাধিকবার হয়, তাই সংখ্যাগুলো ঘটনার সংখ্যা।</p>
+    ${steps.map(([l, v], i) => `<div class="mb-2 text-sm"><div class="flex justify-between"><span>${l}</span><b>${nb(v)}</b></div><div class="h-3 rounded bg-black/5"><div class="h-3 rounded" style="width:${v ? Math.max(2, v / mxF * 100) : 0}%;background:${['#14160f', '#4b6b1e', '#8dc63f', '#c58a00', '#15803d'][i]}"></div></div></div>`).join('')}
+    <div class="grid grid-cols-2 gap-2 mt-3 text-xs"><div class="bg-black/5 rounded-lg p-2">চেকআউটে গিয়ে অর্ডার করেননি<br><b class="text-base">${nb(Math.max(T.ic - T.pur, 0))}</b></div><div class="bg-black/5 rounded-lg p-2">হোয়াটসঅ্যাপে অর্ডারের ক্লিক<br><b class="text-base">${nb(T.wa)}</b></div></div></div>`;
+  /* প্রোডাক্ট তালিকা */
+  const sorts = [['v', 'সবচেয়ে বেশি দেখা'], ['c', 'কার্টে বেশি'], ['o', 'অর্ডার বেশি']], key = AN.sort;
+  const list = [...prod].sort((a, b) => b[key] - a[key] || b.v - a.v), shown = AN.all ? list : list.slice(0, 20);
+  const products = `<div class="card p-4 mt-3"><div class="flex flex-wrap items-center gap-2 mb-2"><h3 class="font-bold mr-auto">প্রোডাক্ট অনুযায়ী</h3>${sorts.map(([k, t]) => `<button data-act="ansort" data-v="${k}" class="tab px-3 py-1 rounded-full border bg-white text-xs ${key === k ? 'on' : ''}">${t}</button>`).join('')}</div>
+    ${list.length ? `<div class="overflow-x-auto"><table class="w-full text-left text-sm"><thead><tr class="border-b text-black/60 text-xs"><th class="py-1">প্রোডাক্ট</th><th class="text-right">দেখা</th><th class="text-right">কার্টে</th><th class="text-right">অর্ডার (পিস)</th><th class="text-right">দেখা→কার্ট</th></tr></thead><tbody>${shown.map(p => `<tr class="border-b"><td class="py-1.5 pr-2">${esc(p.n || ('#' + p.id))}</td><td class="text-right">${nb(p.v)}</td><td class="text-right">${nb(p.c)}</td><td class="text-right">${nb(p.o)}</td><td class="text-right ${p.v >= 10 && !p.c ? 'red' : ''}">${pct(p.c, p.v)}</td></tr>`).join('')}</tbody></table></div>
+    ${list.length > 20 ? `<button data-act="anall" class="btn2 mt-2">${AN.all ? 'কম দেখান' : 'সব ' + nb(list.length) + 'টি দেখুন'}</button>` : ''}
+    <p class="text-xs text-black/50 mt-2">লাল % = অনেকে দেখেছে কিন্তু কেউ কার্টে দেয়নি (দাম, ছবি বা বিবরণ আবার দেখতে পারেন)।</p>` : '<p class="text-sm text-black/50">এখনো কোনো প্রোডাক্ট দেখা বা কার্টে যোগ হয়নি</p>'}</div>`;
+  /* ডিভাইস, উৎস, সময় */
+  const devRows = [['মোবাইল', dev.m || 0], ['ট্যাবলেট', dev.t || 0], ['ডেস্কটপ', dev.d || 0]];
+  const srcRows = Object.entries(src).sort((a, b) => b[1] - a[1]).map(([k, v]) => [SRC_N[k] || k, v]);
+  const mxH = Math.max(1, ...hr);
+  const hours = `<div class="flex items-end gap-[2px] h-24">${hr.map((v, h) => `<div class="flex-1 h-full flex items-end" title="${bn(h)}:০০ — ${nb(v)} ভিজিট"><div class="w-full rounded-t" style="height:${v ? Math.max(4, v / mxH * 100) : 0}%;background:#8dc63f"></div></div>`).join('')}</div>
+    <div class="flex gap-[2px] mt-1">${hr.map((v, h) => `<div class="flex-1 text-[9px] text-center text-black/50">${h % 3 === 0 ? bn(h) : ''}</div>`).join('')}</div>`;
+  const bottom = `<div class="grid md:grid-cols-3 gap-3 mt-3">
+    <div class="card p-4"><h3 class="font-bold mb-2">ডিভাইস</h3>${anBars(devRows)}</div>
+    <div class="card p-4"><h3 class="font-bold mb-2">কোথা থেকে এসেছে</h3>${anBars(srcRows, '#4b6b1e')}</div>
+    <div class="card p-4"><h3 class="font-bold mb-2">কোন সময়ে বেশি ভিজিট (ঘণ্টা)</h3>${hours}</div></div>`;
+  return head + kpis + chart + `<div class="grid md:grid-cols-2 gap-3 mt-3">${funnel}<div class="card p-4"><h3 class="font-bold mb-2">সারাংশ</h3><p class="text-sm leading-relaxed">${AN.range === 1 ? 'আজ' : 'শেষ ' + nb(AN.range) + ' দিনে'} <b>${nb(T.s)}</b> বার ভিজিট হয়েছে, প্রোডাক্ট দেখা হয়েছে <b>${nb(T.vc)}</b> বার, কার্টে যোগ হয়েছে <b>${nb(T.atc)}</b> বার, আর <b>${nb(T.pur)}</b>টি অর্ডার এসেছে (${tk(T.rev)})। প্রতি ১০০ ভিজিটে গড়ে <b>${T.s ? bn((T.pur / T.s * 100).toFixed(1)) : '০'}</b>টি অর্ডার।</p>
+    <p class="text-xs text-black/50 mt-3">শেষ আপডেট: ${AN.at ? new Date(AN.at).toLocaleTimeString('bn-BD', { hour: '2-digit', minute: '2-digit' }) : '—'} · নতুন ডাটা দেখতে "রিফ্রেশ" চাপুন।<br>নিজের ব্রাউজারের ভিজিট বাদ দিতে একবার সাইটের লিংকে <code>?notrack=1</code> দিয়ে খুলুন (আবার চালু করতে <code>?notrack=0</code>)।</p></div></div>` + products + bottom;
 }
 /* ---------- ওয়েবসাইটের ফিচারড সেকশন ---------- */
 const SECTIONS = [['best', '★ বেস্ট সেলিং প্রোডাক্টস', '★ বেস্ট'], ['sandalwood', 'চন্দন কালেকশন (Sandalwood)', 'চন্দন'], ['bamboo', 'বাম্বু কালেকশন (Bamboo Wood)', 'বাম্বু']];
@@ -995,7 +1080,7 @@ function rvEditModal(id) {
 const drawRvImgs = () => { const b = $('#rvaImgs'); if (b) b.innerHTML = rvImgs.map((u, i) => `<div class="relative"><img src="${esc(u)}" class="w-16 h-16 object-cover rounded-lg border"><button data-act="rvrmimg" data-i="${i}" class="absolute -top-2 -right-2 w-5 h-5 rounded-full bg-black text-white text-xs">✕</button></div>`).join(''); };
 
 /* ---------- টেলিগ্রামে অর্ডার (ম্যানুয়াল) ---------- */
-const TG = { botToken: '9066487623:AAGg0IzDGYd5r-5fLWg4l6Vx6sCTMBWJ5hc', chatId: '7971315503' };
+const TG = { botToken: '9066487623:AAGg0IzDGYd5r-5fLWg4l6Vx6sCTMBWJ5hc', chatId: '-1004390280424' };
 const tgTime = o => { try { return (o.createdAt?.toDate ? o.createdAt.toDate() : new Date()).toLocaleString('bn-BD', { timeZone: 'Asia/Dhaka', dateStyle: 'medium', timeStyle: 'short' }); } catch (e) { return ''; } };
 // টেলিগ্রামের লেখা: কোনো ইমোজি/স্টিকার ছাড়া, শুধু লেখা
 function tgOrderText(o, lim) {
@@ -1030,7 +1115,11 @@ async function tgSendOrder(o) {
   return 'text';
 }
 const A = {
-  tab: b => { tab = b.dataset.v; render(); },
+  tab: b => { tab = b.dataset.v; render(); if (tab === 'analytics' && !AN.at) anLoad(); },
+  anrange: b => { AN.range = +b.dataset.v; AN.all = false; anLoad(); },
+  ansort: b => { AN.sort = b.dataset.v; render(); },
+  anall: () => { AN.all = !AN.all; render(); },
+  anrefresh: () => anLoad(),
   imgs: () => { IMG_ON = !IMG_ON; try { localStorage.setItem('adm_imgs', IMG_ON ? '1' : '0'); } catch (e) {} render(); toast(IMG_ON ? 'ছবি চালু: তালিকার সব ছবি লোড হবে' : 'ছবি বন্ধ: ছবিতে চাপলে তবেই লোড হবে'); },
   install: async () => {
     if (installEv) { installEv.prompt(); try { await installEv.userChoice; } catch (e) {} installEv = null; return; }

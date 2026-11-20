@@ -519,7 +519,7 @@ src="https://www.facebook.com/tr?id=2030629185007983&ev=PageView&noscript=1"
 //  2) আপনার নিজের টেলিগ্রাম অ্যাকাউন্ট (01560035645) থেকে ওই বটকে খুঁজে Start চাপুন।
 //  3) @userinfobot কে Start দিলে আপনার "chat id" (একটি সংখ্যা) পাবেন।
 //  4) নিচে দুটি বসান। দুটোই বসালে অর্ডার আপনার টেলিগ্রামে চলে আসবে।
-const TELEGRAM = { botToken: '9066487623:AAGg0IzDGYd5r-5fLWg4l6Vx6sCTMBWJ5hc', chatId: '7971315503' };
+const TELEGRAM = { botToken: '9066487623:AAGg0IzDGYd5r-5fLWg4l6Vx6sCTMBWJ5hc', chatId: '-1004390280424' };
 const SHOP_TELEGRAM_LINK = 'https://t.me/+8801560035645';   // টেলিগ্রাম সেটআপ না থাকলে বিকল্প হিসেবে খোলে
 
 let FREE_SHIP_AT = 1000;   // এই টাকার অর্ডারে ডেলিভারি চার্জ ফ্রি
@@ -1013,7 +1013,8 @@ document.getElementById('rvForm').addEventListener('submit', async (e) => {
   finally { rvBusy = false; btn.disabled = false; btn.textContent = 'রিভিউ পাঠান'; }
 });
 /* ---------- Meta Pixel ইভেন্ট ---------- */
-const fbTrack = (ev, params, opts) => { try { if (window.fbq) (opts ? fbq('track', ev, params, opts) : fbq('track', ev, params)); } catch (e) {} };
+window.azQ = window.azQ || []; if (!window.azStat) window.azStat = (e, p) => window.azQ.push([e, p]);   /* অ্যানালিটিক্স: মডিউল লোড হওয়ার আগের ইভেন্ট জমা থাকে */
+const fbTrack = (ev, params, opts) => { try { window.azStat(ev, params); } catch (e) {} try { if (window.fbq) (opts ? fbq('track', ev, params, opts) : fbq('track', ev, params)); } catch (e) {} };
 let fbCheckoutSent = false;
 const fbContents = (lines) => lines.map((l) => ({ id: String(l.p.id), quantity: l.qty, item_price: l.unit.offer }));
 
@@ -1978,7 +1979,7 @@ route();
 <script src="firebase-config.js"></script>
 <script type="module">
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
-import { getFirestore, collection, doc, getDoc, getDocs, addDoc, updateDoc, onSnapshot, serverTimestamp, increment, query, where, limit } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
+import { getFirestore, collection, doc, getDoc, getDocs, addDoc, updateDoc, setDoc, onSnapshot, serverTimestamp, increment, query, where, limit } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
 try {
   const db = getFirestore(initializeApp(window.FIREBASE_CONFIG));
   window.AZ = { db, collection, doc, getDoc, getDocs, addDoc, updateDoc, serverTimestamp, increment, query, where, limit };
@@ -1997,6 +1998,63 @@ try {
     window.azApplyProducts(parts.flatMap((d) => d.data().items || []), +meta.total > 0);
   }, startLegacy);
   onSnapshot(collection(db, 'banners'), (s) => window.azApplyBanners(s.docs.map((d) => d.data())), quiet);
+
+  /* ---------- ভিজিটর অ্যানালিটিক্স (এডমিন প্যানেলের "অ্যানালিটিক্স" ট্যাবে দেখা যায়) ----------
+     প্রতিদিনের জন্য মাত্র একটি ডকুমেন্ট (analytics/YYYY-MM-DD) এ গণনা জমা হয়; ইভেন্টগুলো জমিয়ে ৮ সেকেন্ডে/পেজ ছাড়ার সময় একবারে লেখা হয়, তাই খরচ খুব কম।
+     নিজের (মালিক/স্টাফের) ব্রাউজারে গণনা বন্ধ করতে একবার সাইটের লিংকের শেষে ?notrack=1 দিয়ে খুলুন (আবার চালু করতে ?notrack=0)। */
+  try { const q0 = new URLSearchParams(location.search).get('notrack'); if (q0 === '1') localStorage.setItem('az_no', '1'); if (q0 === '0') localStorage.removeItem('az_no'); } catch (e) {}
+  let off = !!navigator.webdriver || /bot|crawl|spider|facebookexternalhit|preview|lighthouse|headless/i.test(navigator.userAgent);
+  try { if (localStorage.getItem('az_no') === '1') off = true; } catch (e) {}
+  let buf = {}, timer = 0;
+  const dhaka = () => new Date(Date.now() + 6 * 36e5);
+  const arm = () => { if (!timer) timer = setTimeout(flush, 8000); };
+  const put = (path, val, num) => { let o = buf; for (let i = 0; i < path.length - 1; i++) o = o[path[i]] = o[path[i]] || {}; const k = path[path.length - 1]; o[k] = num ? (o[k] || 0) + val : val; arm(); };
+  const add = (path, n = 1) => put(path, n, true);
+  const conv = (o) => Object.fromEntries(Object.entries(o).map(([k, v]) => [k, typeof v === 'number' ? increment(v) : (v && typeof v === 'object') ? conv(v) : v]));
+  function flush() {
+    clearTimeout(timer); timer = 0;
+    if (!Object.keys(buf).length) return;
+    const data = conv(buf); buf = {};
+    setDoc(doc(db, 'analytics', dhaka().toISOString().slice(0, 10)), data, { merge: true }).catch(() => {});
+  }
+  const cleanId = (v) => String(v ?? '').replace(/[^\w-]/g, '').slice(0, 40);
+  window.azStat = (ev, p = {}) => {
+    if (off) return;
+    try {
+      if (ev === 'ViewContent' || ev === 'AddToCart') {
+        const id = cleanId((p.content_ids || [])[0]); if (!id) return;
+        add(['prod', id, ev === 'ViewContent' ? 'v' : 'c']); put(['prod', id, 'n'], String(p.content_name || '').slice(0, 90));
+        add(['f', ev === 'ViewContent' ? 'vc' : 'atc']);
+      } else if (ev === 'InitiateCheckout') add(['f', 'ic']);
+      else if (ev === 'Purchase') {
+        add(['f', 'pur']); add(['f', 'rev'], Math.round(+p.value || 0));
+        (p.contents || []).forEach((c) => { const id = cleanId(c.id); if (id) add(['prod', id, 'o'], +c.quantity || 1); });
+        flush();
+      } else if (ev === 'Contact') add(['f', 'wa']);
+    } catch (e) {}
+  };
+  const srcKey = () => {
+    const u = new URLSearchParams(location.search).get('utm_source') || ''; let h = '';
+    try { h = document.referrer ? new URL(document.referrer).hostname : ''; } catch (e) {}
+    if (!u && (!h || h === location.hostname)) return 'direct';
+    const s = (u || h).toLowerCase();
+    return /facebook|^fb$|fb\.com|fb\.me/.test(s) ? 'facebook' : /instagram|^ig$/.test(s) ? 'instagram' : /google/.test(s) ? 'google' : /youtube|youtu\.be/.test(s) ? 'youtube' : /whatsapp|wa\.me/.test(s) ? 'whatsapp' : /telegram|t\.me/.test(s) ? 'telegram' : /tiktok/.test(s) ? 'tiktok' : /messenger/.test(s) ? 'messenger' : /bing/.test(s) ? 'bing' : 'other';
+  };
+  const visit = () => {
+    if (off) return;
+    add(['pv']);
+    let newSession = true, newToday = true, newVisitor = true; const today = dhaka().toISOString().slice(0, 10);
+    try { newSession = !sessionStorage.getItem('az_s'); sessionStorage.setItem('az_s', '1'); } catch (e) {}
+    try { newToday = localStorage.getItem('az_d') !== today; localStorage.setItem('az_d', today); } catch (e) { newToday = false; }
+    try { newVisitor = !localStorage.getItem('az_v'); localStorage.setItem('az_v', '1'); } catch (e) { newVisitor = false; }
+    if (newToday) add(['uv']);
+    if (newVisitor) add(['nv']);
+    if (newSession) { add(['s']); add(['hr', String(dhaka().getUTCHours())]); add(['dev', innerWidth < 768 ? 'm' : innerWidth < 1100 ? 't' : 'd']); add(['src', srcKey()]); }
+  };
+  document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'hidden') flush(); });
+  addEventListener('pagehide', flush);
+  (window.azQ || []).splice(0).forEach(([e, p]) => window.azStat(e, p));
+  visit();
 } catch (e) { console.warn('Firebase unavailable', e); }
 </script>
 </body>
