@@ -67,7 +67,7 @@ const badge = s => `<span class="px-2 py-0.5 rounded-full text-xs font-bold ${ST
 const TABS = [['dash','ড্যাশবোর্ড'],['analytics','📊 অ্যানালিটিক্স'],['products','প্রোডাক্ট'],['sections','ফিচারড সেকশন ও ক্যাটাগরি'],['home','হোমপেজ সেকশন'],['brands','ব্র্যান্ড'],['orders','অর্ডার'],['reviews','রিভিউ'],['customers','কাস্টমার'],['promos','প্রমো কোড'],['banners','ব্যানার'],['offers','অফার আইকন'],['popups','পপআপ এড'],['settings','সেটিংস']];
 
 const D = { products:[], orders:[], reviews:[], promos:[], banners:[], settings:{} };
-let tab = 'dash', oFilter = 'all', oSearch = '', pSearch = '', pShow = 30, pFilter = 'all', secQ = {}, autoBusy = false, form = {}, soundOn = false, firstLoad = {}, unsubs = [];
+let tab = 'orders', oFilter = 'all', oSearch = '', pSearch = '', pShow = 30, pFilter = 'all', secQ = {}, autoBusy = false, form = {}, soundOn = false, firstLoad = {}, unsubs = [];
 
 /* ---------- Auth ---------- */
 $('#loginForm').addEventListener('submit', async e => {
@@ -77,9 +77,13 @@ $('#loginForm').addEventListener('submit', async e => {
 });
 onAuthStateChanged(auth, u => {
   $('#login').classList.toggle('hidden', !!u); $('#app').classList.toggle('hidden', !u);
-  unsubs.forEach(f => f()); unsubs = []; firstLoad = {};
-  if (u) { listen('products'); listen('orders', 'createdAt'); listen('reviews', 'createdAt'); listen('promos'); listen('banners'); listenSettings(); }
+  unsubs.forEach(f => f()); unsubs = []; firstLoad = {}; prodOn = false;
+  if (u) { listen('orders', 'createdAt'); listen('reviews', 'createdAt'); listen('promos'); listen('banners'); listenSettings(); }
 });
+/* রিড কমানোর জন্য: প্রোডাক্টের পুরো তালিকা (২০০০+ রিড) শুধু তখনই আনা হয় যখন প্রোডাক্ট-সংক্রান্ত ট্যাব খোলা হয়। অর্ডার/রিভিউ/প্রোমো ইত্যাদি দেখলে প্রোডাক্ট পড়া হয় না। */
+let prodOn = false;
+const LIGHT_TABS = ['orders', 'reviews', 'customers', 'promos', 'banners', 'popups', 'analytics'];
+function ensureProducts() { if (prodOn || !auth.currentUser) return; prodOn = true; listen('products'); }
 function listen(name, ord) {
   const q = ord ? query(collection(db, name), orderBy(ord, 'desc')) : collection(db, name);
   unsubs.push(onSnapshot(q, s => {
@@ -217,6 +221,7 @@ $('#modal').addEventListener('mousedown', e => { if (e.target.id === 'modal') cl
 
 /* ---------- Views ---------- */
 function render() {
+  if (!LIGHT_TABS.includes(tab)) ensureProducts();
   $('#tabs').innerHTML = TABS.map(([k, n]) => `<button data-act="tab" data-v="${k}" class="tab shrink-0 px-3 py-1.5 rounded-full border bg-white ${tab === k ? 'on' : ''}">${n}${k === 'reviews' && D.reviews.filter(r => r.status === 'pending').length ? ` (${bn(D.reviews.filter(r => r.status === 'pending').length)})` : ''}${k === 'orders' && D.orders.filter(o => o.status === 'pending').length ? ` (${bn(D.orders.filter(o => o.status === 'pending').length)})` : ''}</button>`).join('');
   $('#view').innerHTML = ({ dash: vDash, analytics: vAnalytics, products: vProducts, sections: vSections, home: vHome, brands: vBrands, orders: vOrders, reviews: vReviews, customers: vCustomers, promos: vPromos, banners: vBanners, offers: vOffers, popups: vPopups, settings: vSettings })[tab]();
 }
@@ -625,7 +630,7 @@ function orderModal(o) {
     ${o.discount ? `<div class="p-2 flex justify-between"><span>ছাড় ${o.promo ? '(' + esc(o.promo) + ')' : ''}</span><span>-${tk(o.discount)}</span></div>` : ''}<div class="p-2 flex justify-between font-bold"><span>মোট</span><span>${tk(o.total)}</span></div></div>
   <label class="block mt-3 text-sm font-semibold">স্ট্যাটাস<select id="oStatus" class="inp mt-1 font-normal">${Object.entries(ST).map(([k, v]) => `<option value="${k}" ${o.status === k ? 'selected' : ''}>${v[0]}</option>`).join('')}</select></label>
   <label class="block mt-2 text-sm font-semibold">এডমিন নোট<textarea id="oNote" rows="2" class="inp mt-1 font-normal">${esc(o.adminNote)}</textarea></label>
-  <div class="flex flex-wrap gap-2 mt-4"><button class="btn" data-act="osave" data-id="${o.id}">সেভ</button><button class="btn2" data-act="invoice" data-id="${o.id}">🖨 ইনভয়েস</button><button class="btn2" data-act="tgorder" data-id="${o.id}">টেলিগ্রামে আনুন</button><a class="btn2" target="_blank" href="https://wa.me/${waNum(o.phone)}">WhatsApp</a><a class="btn2" href="tel:${esc(o.phone)}">কল</a><button class="btn2 red" data-act="odel" data-id="${o.id}">ডিলিট</button><button class="btn2 ml-auto" data-act="close">বন্ধ</button></div>`);
+  <div class="flex flex-wrap gap-2 mt-4"><button class="btn" data-act="osave" data-id="${o.id}">সেভ</button><button class="btn2" data-act="invoice" data-id="${o.id}">🖨 ইনভয়েস</button><button class="btn2" data-act="tgorder" data-id="${o.id}">টেলিগ্রামে আনুন</button><button class="btn2" data-act="sforder" data-id="${o.id}">${o.sfId ? '🚚 Steadfast ✔ ' + esc(o.sfTrack || o.sfId) : '🚚 Steadfast-এ পাঠান'}</button><a class="btn2" target="_blank" href="https://wa.me/${waNum(o.phone)}">WhatsApp</a><a class="btn2" href="tel:${esc(o.phone)}">কল</a><button class="btn2 red" data-act="odel" data-id="${o.id}">ডিলিট</button><button class="btn2 ml-auto" data-act="close">বন্ধ</button></div>`);
 }
 function invoice(o) {
   const w = window.open('', '_blank'), s = D.settings;
@@ -649,6 +654,7 @@ function vImport() {
     <select class="inp !w-auto" data-in="impmode"><option value="add" ${impMode === 'add' ? 'selected' : ''}>➕ যোগ করুন (JSON এর প্রোডাক্ট সাইটে যোগ হবে)</option><option value="remove" ${impMode === 'remove' ? 'selected' : ''}>➖ বাদ দিন (JSON এ থাকা প্রোডাক্ট ডিলিট হবে)</option></select>
     ${impMode === 'add' ? `<label class="flex items-center gap-2"><input type="checkbox" data-in="impupd" ${impUpdate ? 'checked' : ''}> আগে থেকে থাকলে আপডেট করুন (না চাপলে বাদ যাবে)</label>` : ''}
   </div>
+  <div class="mb-3 p-3 rounded-xl border-2 border-[#8dc63f] bg-[#f4f7ee]"><p class="font-semibold">📦 নতুন ক্যাটালগ ইমপোর্ট (ছবিসহ) — সবচেয়ে সহজ</p><p class="text-xs text-black/60 mt-1">ক্যাটালগ ফাইল (catalog-import.zip) আর ছবির ফোল্ডার/জিপ দিলেই সব প্রোডাক্ট ছবিসহ বসে যাবে।</p><button class="btn mt-2" data-act="ciopen">📦 ক্যাটালগ ইমপোর্ট খুলুন</button></div>
   <div class="flex flex-wrap gap-3 mt-3 items-center"><input type="file" accept=".json,application/json" data-in="seed"><button class="btn2" data-act="impsample">⬇ নমুনা JSON নামান</button><button class="btn2" data-act="lgfetch">🌐 ladyglamour থেকে সরাসরি আনুন (মোবাইলে)</button></div>
   <details class="mt-3 text-xs text-black/70"><summary class="cursor-pointer font-semibold">যে যে ফরম্যাট চলবে</summary>
   <pre class="mt-2 p-2 bg-black/5 rounded-lg overflow-x-auto" dir="ltr">1) ক্যাটাগরি-ওয়াইজ:
@@ -802,7 +808,7 @@ function chunkItems(items) {
   if (cur.length || !chunks.length) chunks.push(cur);
   return { chunks, dropped };
 }
-function schedSync() { clearTimeout(syncTimer); syncTimer = setTimeout(() => syncCatalog(false), 2500); }
+function schedSync() { clearTimeout(syncTimer); if (catRun) return; syncTimer = setTimeout(() => syncCatalog(false), 2500); }
 async function syncCatalog(force) {
   if (!auth.currentUser || !firstLoad.products) return;
   if (!D.products.length && !hadProducts) return;
@@ -1018,6 +1024,264 @@ async function migrateExternal() {
   toast(bn(ok) + 'টি ছবি ImageKit-এ এসেছে ✅' + (fail ? ` · ${bn(fail)}টি আনা যায়নি (${err})` : ''), 6000);
 }
 
+
+/* ---------- 📦 ক্যাটালগ ইমপোর্ট: ক্যাটালগ জিপ/CSV + ছবির ফোল্ডার/জিপ দিলেই প্রোডাক্ট বসে যায় ----------
+   ১) ক্যাটালগ ফাইল (catalog-import.zip) বাছুন  ২) ছবির ফোল্ডার বা জিপ বাছুন  ৩) "শুরু করুন"
+   প্রতিটি ছবি ৫০KB-তে ছোট হয়ে ImageKit-এ (না হলে Cloudinary-তে) যায়; একই ছবি দু'বার আপলোড হয় না।
+   মাঝপথে থামলে/বন্ধ হলে আবার একই ফাইল দিন — যা হয়ে গেছে তা বাদ দিয়ে বাকিটা হবে। */
+let catRun = false;
+const CI = { products: null, links: null, img: new Map(), imgN: 0, plan: null, upd: false, running: false, stop: false, st: null, log: [], shaUrl: null, names: {} };
+const ciKey = s => String(s || '').split(/[\\/]/).pop().trim().toLowerCase();
+const ciMime = n => ({ jpg: 'image/jpeg', jpeg: 'image/jpeg', png: 'image/png', webp: 'image/webp', avif: 'image/avif', gif: 'image/gif' })[(String(n).split('.').pop() || '').toLowerCase()] || '';
+
+/* CSV পার্সার (ডাবল-কোটের ভেতরের কমা/নতুন লাইনসহ) */
+function ciCsv(text) {
+  if (text.charCodeAt(0) === 0xFEFF) text = text.slice(1);
+  const rows = []; let row = [], f = '', q = false, i = 0; const n = text.length;
+  while (i < n) {
+    const c = text[i];
+    if (q) { if (c === '"') { if (text[i + 1] === '"') { f += '"'; i += 2; continue; } q = false; i++; continue; } f += c; i++; continue; }
+    if (c === '"') { q = true; i++; continue; }
+    if (c === ',') { row.push(f); f = ''; i++; continue; }
+    if (c === '\r') { i++; continue; }
+    if (c === '\n') { row.push(f); rows.push(row); row = []; f = ''; i++; continue; }
+    f += c; i++;
+  }
+  if (f !== '' || row.length) { row.push(f); rows.push(row); }
+  const h = (rows.shift() || []).map(x => x.trim());
+  return rows.filter(r => r.length > 1 || (r[0] || '') !== '').map(r => Object.fromEntries(h.map((k, j) => [k, r[j] ?? ''])));
+}
+
+/* ছোট ZIP রিডার (বড় জিপও পুরো মেমরিতে না তুলে দরকারমতো টুকরো পড়ে) */
+async function ciZip(blob) {
+  const size = blob.size, tailLen = Math.min(size, 65557 + 22);
+  const tail = new Uint8Array(await blob.slice(size - tailLen, size).arrayBuffer()), tv = new DataView(tail.buffer);
+  let e = -1; for (let i = tail.length - 22; i >= 0; i--) if (tv.getUint32(i, true) === 0x06054b50) { e = i; break; }
+  if (e < 0) throw new Error('এটি ঠিকমতো ZIP ফাইল নয়');
+  let cnt = tv.getUint16(e + 10, true), cdSize = tv.getUint32(e + 12, true), cdOff = tv.getUint32(e + 16, true);
+  if ((cdOff === 0xFFFFFFFF || cnt === 0xFFFF || cdSize === 0xFFFFFFFF) && e >= 20 && tv.getUint32(e - 20, true) === 0x07064b50) {
+    const off64 = Number(tv.getBigUint64(e - 20 + 8, true)), z = new DataView(await blob.slice(off64, off64 + 56).arrayBuffer());
+    cnt = Number(z.getBigUint64(32, true)); cdSize = Number(z.getBigUint64(40, true)); cdOff = Number(z.getBigUint64(48, true));
+  }
+  const cd = await blob.slice(cdOff, cdOff + cdSize).arrayBuffer(), dv = new DataView(cd), u8 = new Uint8Array(cd), dec = new TextDecoder('utf-8');
+  const out = []; let p = 0;
+  while (p + 46 <= cd.byteLength && dv.getUint32(p, true) === 0x02014b50) {
+    const method = dv.getUint16(p + 10, true); let csize = dv.getUint32(p + 20, true), usize = dv.getUint32(p + 24, true), off = dv.getUint32(p + 42, true);
+    const nl = dv.getUint16(p + 28, true), el = dv.getUint16(p + 30, true), cl = dv.getUint16(p + 32, true), name = dec.decode(u8.subarray(p + 46, p + 46 + nl));
+    if (csize === 0xFFFFFFFF || usize === 0xFFFFFFFF || off === 0xFFFFFFFF) {
+      let x = p + 46 + nl; const end = x + el;
+      while (x + 4 <= end) {
+        const id = dv.getUint16(x, true), len = dv.getUint16(x + 2, true);
+        if (id === 1) { let y = x + 4; if (usize === 0xFFFFFFFF) { usize = Number(dv.getBigUint64(y, true)); y += 8; } if (csize === 0xFFFFFFFF) { csize = Number(dv.getBigUint64(y, true)); y += 8; } if (off === 0xFFFFFFFF) { off = Number(dv.getBigUint64(y, true)); } break; }
+        x += 4 + len;
+      }
+    }
+    if (!name.endsWith('/')) out.push({
+      name, size: usize,
+      get: async () => {
+        const lh = new DataView(await blob.slice(off, off + 30).arrayBuffer()), start = off + 30 + lh.getUint16(26, true) + lh.getUint16(28, true);
+        const part = blob.slice(start, start + csize);
+        if (method === 0) return part;
+        if (method !== 8) throw new Error('এই ZIP কমপ্রেশন চলে না');
+        return await new Response(part.stream().pipeThrough(new DecompressionStream('deflate-raw'))).blob();
+      }
+    });
+    p += 46 + nl + el + cl;
+  }
+  return out;
+}
+
+/* ফাইল লোড */
+async function ciLoadCatalog(files) {
+  const got = {};
+  const take = async (name, getText) => { const k = ciKey(name); if (!/\.csv$/.test(k)) return; if (k.includes('product_media')) got.links = await getText(); else if (k.includes('media')) got.media = await getText(); else if (k.includes('products')) got.products = await getText(); };
+  for (const f of files) {
+    if (/\.zip$/i.test(f.name)) { for (const en of await ciZip(f)) await take(en.name, async () => (await en.get()).text()); }
+    else await take(f.name, () => f.text());
+  }
+  if (!got.products) throw new Error('products.csv পাওয়া যায়নি — catalog-import.zip ফাইলটাই বাছুন');
+  CI.products = ciCsv(got.products); CI.links = got.links ? ciCsv(got.links) : [];
+  CI.plan = null;
+}
+async function ciLoadImages(files) {
+  for (const f of files) {
+    if (/\.zip$/i.test(f.name)) {
+      for (const en of await ciZip(f)) { const m = ciMime(en.name); if (m) CI.img.set(ciKey(en.name), { get: async () => new Blob([await en.get()], { type: m }), size: en.size }); }
+    } else {
+      const m = ciMime(f.name) || (/^image\//.test(f.type) ? f.type : ''); if (m) CI.img.set(ciKey(f.name), { get: async () => f, size: f.size });
+    }
+  }
+  CI.imgN = CI.img.size; CI.plan = null;
+}
+
+/* পুরনো ক্যাটাগরি → সাইটের ক্যাটাগরি */
+const CI_CAT = [
+  [/clearence|clearance|combo/, ''], [/masseger|massager/, 'Massagers'], [/^comb$/, 'Combs'], [/shampoo brush/, 'Hair'], [/^brush$|hair brush/, 'Hair Brushes'],
+  [/perfume|body mist|deodor|fragrance/, 'Fragrance'], [/mouthwash|tooth|supplement/, 'Pharmacy Items'], [/eye ?(cream|mask)/, 'Eye'],
+  [/eyeshadow|mascara|eyeliner|kajal|eyelash|eyebrow|brow/, 'Eye'], [/skin tint/, 'Face'], [/lip|tint|balm/, 'Lip'],
+  [/hair remover|bath|shower|soap|lotion|underarm|hand|body|foot|breast|stretch/, 'Bath & Body'], [/trimmer|razor/, 'Makeup'],
+  [/^oil$|shampoo|conditioner|hair/, 'Hair'],
+  [/cream|serum|ampoule|essence|cleanser|face|sunscreen|primer|foundation|bb|toner|rose water|powder|concealer|contour|setting|fixer|skin|soothing|cleansing|micel|acne|pack|mask|sheet|peeling|wipes|cotton|scrub|blush|highlighter|compact|nose/, 'Face'],
+  [/makeup|tools|puff|nail|mirror|accesor|accessor/, 'Makeup']
+];
+function ciCats(r) {
+  const out = [];
+  String(r.categories || '').split('|').map(s => s.trim()).filter(Boolean).forEach(c => { const k = c.toLowerCase(); const m = CI_CAT.find(([re]) => re.test(k)); const v = m ? m[1] : 'Others'; if (v && !out.includes(v)) out.push(v); });
+  if (!out.length) out.push('Others');
+  if (/korea|k-beauty|kbeauty/i.test((r.name || '') + ' ' + (r.short_desc || '') + ' ' + (r.description || '')) && !out.includes('K-Beauty')) out.push('K-Beauty');
+  return out;
+}
+
+/* প্ল্যান বানানো: কোনটা নতুন, কোনটা আপডেট, কোনটায় শুধু ছবি বসবে, কোনটা বাদ */
+function ciPlan() {
+  const links = new Map(); (CI.links || []).forEach(l => { const a = links.get(l.product_source_id) || []; a.push(l); links.set(l.product_source_id, a); });
+  const byId = new Map(D.products.map(p => [p.id, p])), byName = new Map(D.products.map(p => [impKey(p.name), p]));
+  const items = [], bad = []; let miss = new Set(), need = new Set();
+  for (const r of CI.products) {
+    const id = String(r.source_id || '').trim(), name = String(r.name || '').trim();
+    if (!id || !name) { bad.push(name || id || '?'); continue; }
+    const offer = +r.price || +r.sale_price || +r.regular_price || 0, regular = Math.max(+r.regular_price || 0, offer);
+    const seen = new Set(), imgs = [];
+    (links.get(id) || []).sort((a, b) => (+a.position || 0) - (+b.position || 0)).forEach(l => { const k = l.sha256 || l.filename; if (seen.has(k) || imgs.length >= 15) return; seen.add(k); imgs.push({ file: ciKey(l.filename), sha: l.sha256 || ciKey(l.filename) }); });
+    imgs.forEach(im => { need.add(im.file); if (!CI.img.has(im.file)) miss.add(im.file); });
+    const cats = ciCats(r), cid = impDocId(id), ex = D.products.find(p => p.id === cid) || byId.get(cid) || byName.get(impKey(name)) || null;
+    const desc = [String(r.short_desc || '').trim(), String(r.description || '').trim()].filter((x, i, a) => x && a.indexOf(x) === i).join('\n\n');
+    const p = { name, offer, regular, stock: String(r.in_stock).toLowerCase() === 'true' ? 50 : 0, desc, images: [] };
+    const hosted = ex && (ex.images || []).some(x => !isExt(x));
+    let act = 'add';
+    if (ex) act = CI.upd ? 'update' : (!hosted && imgs.length ? 'fillimg' : 'skip');
+    items.push({ p, name, cid, ex, cats: new Set(cats), cat0: cats[0], imgs, act });
+  }
+  const catMap = {}; items.filter(i => i.act === 'add' || i.act === 'update').forEach(i => catMap[i.cat0] = (catMap[i.cat0] || 0) + 1);
+  CI.plan = { items, bad, miss: [...miss], need: need.size, catMap };
+}
+
+/* এক ছবি আপলোড (sha দিয়ে ডুপ্লিকেট এড়ানো) */
+const ciSleep = ms => new Promise(r => setTimeout(r, ms));
+function ciSave() { try { localStorage.setItem('ci_sha_v1', JSON.stringify([...CI.shaUrl])); } catch (e) {} }
+async function ciPush(blob, sha) {
+  let last;
+  for (let t = 0; t < 3; t++) {
+    try {
+      const data = await blobToData(await compress50(blob)), tk = await auth.currentUser.getIdToken();
+      const res = await fetch('/api/upload', { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + tk }, body: JSON.stringify({ file: data, fileName: 'lg-' + String(sha).slice(0, 16) + '.jpg' }) });
+      const j = await res.json().catch(() => ({}));
+      if (res.ok && j.url) return j.url;
+      last = new Error(j.error || ('HTTP ' + res.status));
+    } catch (e) { last = e; if (/ছবি পড়া|৫০KB/.test(e.message || '')) break; }
+    await ciSleep(1200 * (t + 1));
+  }
+  try { return await uploadCld(blob); } catch (e) { throw new Error((last && last.message) || e.message); }
+}
+function ciImg(im) {
+  if (!CI.shaUrl) { CI.shaUrl = new Map(); try { JSON.parse(localStorage.getItem('ci_sha_v1') || '[]').forEach(([k, v]) => CI.shaUrl.set(k, v)); } catch (e) {} }
+  const hit = CI.shaUrl.get(im.sha); if (hit && typeof hit === 'string') return Promise.resolve(hit);
+  if (hit) return hit;
+  const pr = (async () => {
+    const f = CI.img.get(im.file); if (!f) throw new Error('ফাইল নেই');
+    const url = await ciPush(await f.get(), im.sha);
+    CI.shaUrl.set(im.sha, url); CI.st.up++; if (CI.st.up % 25 === 0) ciSave();
+    return url;
+  })();
+  CI.shaUrl.set(im.sha, pr);
+  pr.catch(() => { if (CI.shaUrl.get(im.sha) === pr) CI.shaUrl.delete(im.sha); });
+  return pr;
+}
+
+/* চালানো */
+async function ciRun() {
+  if (CI.running || !CI.plan) return;
+  const todo = CI.plan.items.filter(i => i.act !== 'skip'); if (!todo.length) return toast('করার মতো কিছু নেই');
+  if (!CI.imgN && !confirm('কোনো ছবি বাছা হয়নি। ছবি ছাড়াই প্রোডাক্ট যোগ হবে (ছবি পরে দিলে আবার চালাতে পারবেন)। চালাবেন?')) return;
+  if (!confirm(bn(todo.length) + 'টি প্রোডাক্ট ইমপোর্ট হবে। যতক্ষণ চলবে এই পেজ খোলা রাখুন (ফোন হলে স্ক্রিন বন্ধ করবেন না)। শুরু করবেন?')) return;
+  CI.running = true; CI.stop = false; catRun = true; CI.log = [];
+  CI.st = { total: todo.length, done: 0, add: 0, upd: 0, fill: 0, up: 0, imgFail: 0, noImg: 0, fails: 0, t0: Date.now(), consec: 0, err: '' };
+  let wl = null; try { wl = await navigator.wakeLock?.request('screen'); } catch (e) {}
+  window.onbeforeunload = () => 'ইমপোর্ট চলছে';
+  let idx = 0;
+  const worker = async () => {
+    while (!CI.stop && idx < todo.length) {
+      const it = todo[idx++];
+      try {
+        const urls = [];
+        for (const im of it.imgs) {
+          if (CI.stop) break;
+          if (!CI.img.has(im.file)) { CI.st.imgFail++; continue; }
+          try { urls.push(await ciImg(im)); CI.st.consec = 0; }
+          catch (e) { CI.st.imgFail++; CI.st.consec++; CI.st.err = e.message || String(e); CI.log.push(it.name + ' → ' + CI.st.err); if (CI.st.consec >= 10) { CI.stop = true; CI.st.stopMsg = 'পরপর অনেকগুলো ছবি আপলোড হয়নি (' + CI.st.err + ') — ইন্টারনেট/ImageKit চেক করে আবার চালান'; } }
+        }
+        if (CI.stop && urls.length < it.imgs.length) continue;   // অর্ধেক ছবি নিয়ে লিখব না; পরের বার আবার হবে
+        if (it.imgs.length && !urls.length) CI.st.noImg++;
+        it.p.images = urls;
+        if (it.act === 'fillimg') {
+          if (urls.length) { await updateDoc(doc(db, 'products', it.ex.id), { images: urls, source: 'ladyglamour' }); CI.st.fill++; }
+        } else if (it.act === 'update') {
+          const d = clean(impData(it)); if (!urls.length) delete d.images; d.source = 'ladyglamour';
+          await setDoc(doc(db, 'products', it.ex.id), d, { merge: true }); CI.st.upd++;
+        } else {
+          const d = clean(impData(it)); d.source = 'ladyglamour';
+          await setDoc(doc(db, 'products', it.cid), { ...d, createdAt: serverTimestamp() }); CI.st.add++;
+        }
+        CI.st.done++;
+      } catch (e) { CI.st.fails++; CI.log.push(it.name + ' → ' + (e.code || e.message)); if (e.code === 'permission-denied') { CI.stop = true; CI.st.stopMsg = 'Firebase অনুমতি নেই (permission-denied) — অ্যাডমিন হিসেবে লগইন আছে তো?'; } }
+      ciProg();
+    }
+  };
+  ciDraw();
+  await Promise.all([worker(), worker(), worker(), worker()]);
+  ciSave(); window.onbeforeunload = null; try { await wl?.release(); } catch (e) {}
+  CI.running = false; catRun = false; CI.st.end = Date.now(); CI.plan = null; ciDraw(); await ciSleep(3000); ciPlan(); ciDraw();
+  toast(CI.stop ? 'থামানো হয়েছে — আবার চালালে বাকিটা হবে' : '✅ ইমপোর্ট শেষ', 6000);
+  schedSync();
+}
+function ciProg() {
+  const el = $('#ciProg'); if (!el || !CI.st) return; const s = CI.st, pct = Math.round(s.done / Math.max(1, s.total) * 100), el_s = (Date.now() - s.t0) / 1000;
+  const eta = s.done > 3 && CI.running ? Math.round(el_s / s.done * (s.total - s.done) / 60) : 0;
+  el.innerHTML = `<div class="mt-3"><div class="h-3 rounded-full bg-black/10 overflow-hidden"><div class="h-3 bg-[#8dc63f]" style="width:${pct}%"></div></div>
+  <p class="text-sm mt-2"><b>${bn(s.done)}/${bn(s.total)}</b> প্রোডাক্ট (${bn(pct)}%) · নতুন ${bn(s.add)} · আপডেট ${bn(s.upd + s.fill)} · ছবি আপলোড ${bn(s.up)}${eta ? ' · আনুমানিক বাকি ' + bn(eta) + ' মিনিট' : ''}</p>
+  ${s.imgFail || s.fails || s.noImg ? `<p class="text-xs red mt-1">ছবি আসেনি/হয়নি: ${bn(s.imgFail)}টি · ছবি ছাড়া প্রোডাক্ট: ${bn(s.noImg)}টি · ব্যর্থ: ${bn(s.fails)}টি</p>` : ''}
+  ${s.stopMsg ? `<p class="text-sm red mt-1 font-semibold">${esc(s.stopMsg)}</p>` : ''}
+  ${CI.log.length ? `<details class="mt-1 text-xs"><summary class="cursor-pointer">সমস্যার তালিকা (${bn(CI.log.length)})</summary><div class="max-h-40 overflow-y-auto mt-1 text-black/70">${CI.log.slice(-40).map(esc).join('<br>')}</div></details>` : ''}</div>`;
+}
+function ciDraw() {
+  const P = CI.products, pl = CI.plan, n = a => pl ? pl.items.filter(i => i.act === a).length : 0, run = CI.running;
+  let info = '';
+  if (P) {
+    info += `<p class="mt-3">✅ ক্যাটালগ: <b>${bn(P.length)}টি প্রোডাক্ট</b>, ${bn((CI.links || []).length)}টি ছবির লিংক</p>`;
+    info += `<p>${CI.imgN ? '✅' : '⚠️'} ছবির ফাইল বাছা হয়েছে: <b>${bn(CI.imgN)}টি</b></p>`;
+    if (pl) {
+      info += `<p>${pl.miss.length ? '⚠️' : '✅'} ক্যাটালগের ${bn(pl.need)}টি ছবির মধ্যে <b>${bn(pl.need - pl.miss.length)}টি</b> পাওয়া গেছে${pl.miss.length ? `, <span class="red">${bn(pl.miss.length)}টি পাওয়া যায়নি</span>` : ''}</p>`;
+      if (pl.miss.length && CI.imgN) info += `<p class="text-xs text-black/60">যেমন: ${pl.miss.slice(0, 3).map(esc).join(', ')} — ছবির ফোল্ডারটাই (সব ছবিসহ) বেছেছেন তো?</p>`;
+      info += `<div class="mt-2 p-3 rounded-xl bg-black/5"><b>${bn(n('add'))}টি নতুন যোগ হবে</b>${n('update') ? ` · ${bn(n('update'))}টি আপডেট` : ''}${n('fillimg') ? ` · ${bn(n('fillimg'))}টিতে শুধু ছবি বসবে` : ''}${n('skip') ? ` · <span class="text-black/60">${bn(n('skip'))}টি আগে থেকেই আছে (বাদ)</span>` : ''}${pl.bad.length ? ` · <span class="red">${bn(pl.bad.length)}টি নাম ছাড়া (বাদ)</span>` : ''}</div>`;
+      info += `<p class="font-semibold mt-3 mb-1 text-xs">সাইটের ক্যাটাগরি অনুযায়ী (পরে অ্যাডমিন থেকে বদলানো যাবে)</p><div class="flex flex-wrap gap-1.5">${Object.entries(pl.catMap).sort((a, b) => b[1] - a[1]).map(([c, k]) => `<span class="px-2 py-0.5 rounded-full bg-black/10 text-xs font-semibold">${esc(c)} · ${bn(k)}</span>`).join('')}</div>`;
+    }
+  }
+  const todo = pl ? pl.items.filter(i => i.act !== 'skip').length : 0;
+  openModal(`<div class="flex items-center mb-1"><h2 class="font-bold text-lg mr-auto">📦 ক্যাটালগ ইমপোর্ট (ছবিসহ)</h2><button class="btn2" data-act="close">বন্ধ</button></div>
+  <p class="text-xs text-black/60">শুধু ফাইল দুটো বাছুন, বাকি সব নিজে থেকে হবে। প্রতিটি ছবি ৫০KB-তে ছোট করে ImageKit-এ যাবে।</p>
+  <div class="mt-3 space-y-3 ${run ? 'opacity-50 pointer-events-none' : ''}">
+    <div><p class="font-semibold text-sm">ধাপ ১: ক্যাটালগ ফাইল <span class="text-xs font-normal text-black/60">(catalog-import.zip)</span></p><input type="file" accept=".zip,.csv" multiple data-ci="cat" class="mt-1"></div>
+    <div><p class="font-semibold text-sm">ধাপ ২: ছবি <span class="text-xs font-normal text-black/60">(ছবির জিপ ফাইল, অথবা ছবির ফোল্ডার)</span></p>
+      <div class="flex flex-wrap gap-3 mt-1"><label class="btn2 cursor-pointer">🗜 ছবির ZIP বাছুন<input type="file" accept=".zip,image/*" multiple data-ci="imgs" class="hidden"></label>
+      <label class="btn2 cursor-pointer">📁 ছবির ফোল্ডার বাছুন<input type="file" webkitdirectory multiple data-ci="dir" class="hidden"></label></div></div>
+    <label class="flex items-center gap-2 text-xs"><input type="checkbox" data-ci="upd" ${CI.upd ? 'checked' : ''}> সাইটে আগে থেকে থাকা প্রোডাক্টও আপডেট করুন (দাম, বিবরণ ও ছবি নতুন ফাইল থেকে বসবে)</label>
+  </div>
+  <div class="text-sm" id="ciInfo">${info}</div>
+  <div class="flex gap-2 mt-4">${run ? '<button class="btn flex-1" data-act="cistop">⏹ থামান</button>' : `<button class="btn flex-1" data-act="cigo" ${todo ? '' : 'disabled style="opacity:.5"'}>🚀 শুরু করুন${todo ? ' (' + bn(todo) + 'টি)' : ''}</button>`}</div>
+  <div id="ciProg"></div>`);
+  ciProg();
+}
+function ciOpen() { ciDraw(); }
+document.addEventListener('change', async e => {
+  const t = e.target, k = t.dataset.ci; if (!k) return;
+  if (k === 'upd') { CI.upd = t.checked; if (CI.products) { ciPlan(); ciDraw(); } return; }
+  const files = [...t.files]; if (!files.length) return; t.value = '';
+  try {
+    toast('ফাইল পড়া হচ্ছে…', 4000);
+    if (k === 'cat') await ciLoadCatalog(files); else await ciLoadImages(files);
+    if (CI.products) ciPlan(); ciDraw(); toast('✅ ফাইল পড়া হয়েছে');
+  } catch (er) { toast('❌ ' + (er.message || er), 7000); }
+});
 
 /* ---------- Actions ---------- */
 
@@ -1236,6 +1500,9 @@ const A = {
   migimgs: migrateImages,
   migext: migrateExternal,
   lgfetch: lgFetchAll,
+  ciopen: ciOpen,
+  cigo: ciRun,
+  cistop: () => { CI.stop = true; toast('থামছে… চলতি প্রোডাক্ট শেষ হলে থামবে'); },
   impgo: impRun,
   impsample: impSample,
   rvnew: () => rvModal(),
@@ -1270,6 +1537,22 @@ const A = {
       updateDoc(doc(db, 'orders', o.id), { tgAt: serverTimestamp() }).catch(() => {});
     } catch (e) { toast('টেলিগ্রামে যায়নি: ' + (e.message || e)); }
     finally { b.disabled = false; b.textContent = old; }
+  },
+  sforder: async b => {
+    const o = D.orders.find(x => x.id === b.dataset.id); if (!o) return;
+    if (o.sfId) { toast('আগেই Steadfast-এ পাঠানো হয়েছে (ট্র্যাকিং: ' + (o.sfTrack || o.sfId) + ')'); return; }
+    if (!confirm('অর্ডার ' + o.orderNo + ' Steadfast-এ পাঠাবেন? COD: ৳' + o.total)) return;
+    const old = b.textContent; b.disabled = true; b.textContent = 'পাঠানো হচ্ছে…';
+    try {
+      const tk = await auth.currentUser.getIdToken();
+      const res = await fetch('/api/steadfast', { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + tk }, body: JSON.stringify({ orderNo: o.orderNo, name: o.name, phone: o.phone, address: o.address + (o.area ? ', ' + o.area : ''), cod: o.total, note: o.adminNote || o.note || '', items: (o.items || []).map(i => i.name + (i.shade ? ' (' + i.shade + ')' : '') + (i.variant ? ' (' + i.variant + ')' : '') + ' x' + i.qty).join(', ') }) });
+      const j = await res.json().catch(() => ({}));
+      if (!res.ok || !j.ok) throw new Error(j.error || ('HTTP ' + res.status));
+      await updateDoc(doc(db, 'orders', o.id), { sfId: String(j.consignment_id), sfTrack: j.tracking_code || '', sfAt: serverTimestamp() });
+      toast('Steadfast-এ গেছে ✅ ট্র্যাকিং: ' + (j.tracking_code || j.consignment_id));
+      b.textContent = '🚚 Steadfast ✔ ' + (j.tracking_code || j.consignment_id);
+    } catch (e) { toast('Steadfast-এ যায়নি: ' + (e.message || e)); b.textContent = old; }
+    finally { b.disabled = false; }
   },
   order: b => orderModal(D.orders.find(o => o.id === b.dataset.id)),
   ofilter: b => { oFilter = b.dataset.v; render(); },
