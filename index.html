@@ -555,7 +555,7 @@ const IMG = {
 /* ছবির ছোট সংস্করণ: Cloudinary ছবির প্রস্থ কমিয়ে ব্যান্ডউইথ বাঁচায় (অন্য লিংক অপরিবর্তিত থাকে) */
 const cdn = (u, w) => {
   if (typeof u !== 'string') return u;
-  const k = u.match(/^(https:\/\/ik\.imagekit\.io\/[^?]+)(\?.*)?$/); if (k) return k[1] + '?tr=w-' + w;
+  const k = u.match(/^(https:\/\/ik\.imagekit\.io\/[^?]+)(\?.*)?$/); if (k) return k[1] + '?tr=w-' + w + ',q-70';
   const m = u.match(/^(https:\/\/res\.cloudinary\.com\/[^/]+\/image\/upload\/)(.+)$/);
   if (!m) return u;
   const sg = m[2].match(/^((?:[a-z]{1,3}_[^/,]*,?)+)\/(.+)$/);

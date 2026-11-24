@@ -103,8 +103,8 @@ const fileToData = (f, max = 900, q = .8) => new Promise((ok, no) => {
   r.onerror = no; r.readAsDataURL(f);
 });
 
-/* ---------- ছবি কমপ্রেস: ব্যানার ছাড়া সব ছবি (আপলোড ও ডাউনলোড) ৫০KB এর মধ্যে ---------- */
-const IMG_MAX = 50000;   // ৫০KB (১০০০ বা ১০২৪ যেভাবেই গুনুন, এর নিচে)
+/* ---------- ছবি কমপ্রেস: ব্যানার ছাড়া সব ছবি (আপলোড ও ডাউনলোড) ৪০KB এর মধ্যে ---------- */
+const IMG_MAX = 40000;   // ৪০KB (১০০০ বা ১০২৪ যেভাবেই গুনুন, এর নিচে)
 const jpegAt = (c, q) => new Promise(r => c.toBlob(b => r(b), 'image/jpeg', q));
 async function compress50(input) {
   const src = input instanceof Blob ? input : await (await fetch(input)).blob();
@@ -124,7 +124,7 @@ async function compress50(input) {
       if (ok) { best = ok.b; if (ok.q >= .6) return ok.b; }
     }
     if (best) return best;
-    throw new Error('৫০KB এর মধ্যে আনা যায়নি');
+    throw new Error('৪০KB এর মধ্যে আনা যায়নি');
   } finally { URL.revokeObjectURL(url); }
 }
 const blobToData = b => new Promise((ok, no) => { const r = new FileReader(); r.onload = () => ok(r.result); r.onerror = no; r.readAsDataURL(b); });
@@ -137,7 +137,7 @@ async function uploadCld(file) {
   const fd = new FormData(); fd.append('file', await toBlob(file)); fd.append('upload_preset', CLD.preset);
   const res = await fetch(`https://api.cloudinary.com/v1_1/${CLD.cloud}/image/upload`, { method: 'POST', body: fd });
   const j = await res.json(); if (!res.ok || !j.secure_url) throw new Error(j.error?.message || 'upload failed');
-  return j.secure_url;   // কোনো রূপান্তর (w_800/f_auto) নয়: ওটা ছোট ছবি বড় করে ফেলত, ফাইল ৫০KB ছাড়াত
+  return j.secure_url;   // কোনো রূপান্তর (w_800/f_auto) নয়: ওটা ছোট ছবি বড় করে ফেলত, ফাইল ৪০KB ছাড়াত
 }
 
 /* ---------- নতুন ছবি আপলোড: ImageKit-এ (সার্ভার-ফাংশন /api/upload দিয়ে); না হলে Cloudinary-তে ---------- */
@@ -168,7 +168,7 @@ async function uploadImg(file) {
 /* ---------- অ্যাডমিনে ছোট ছবি: ক্রেডিট/ব্যান্ডউইথ বাঁচাতে ছোট মাপের সংস্করণ + দরকারে লোড (lazy) ---------- */
 const th = (u, w) => {
   u = String(u || '');
-  let m = u.match(/^(https:\/\/ik\.imagekit\.io\/[^?]+)(\?.*)?$/); if (m) return m[1] + '?tr=w-' + w;
+  let m = u.match(/^(https:\/\/ik\.imagekit\.io\/[^?]+)(\?.*)?$/); if (m) return m[1] + '?tr=w-' + w + ',q-70';
   m = u.match(/^(https:\/\/res\.cloudinary\.com\/[^/]+\/image\/upload\/)(.+)$/); if (!m) return u;
   const sg = m[2].match(/^((?:[a-z]{1,3}_[^/,]*,?)+)\/(.+)$/);
   if (sg) { let t = /(^|,)w_\d+/.test(sg[1]) ? sg[1].replace(/(^|,)w_\d+/, '$1w_' + w) : sg[1] + ',w_' + w; if (!/(^|,)c_/.test(t)) t += ',c_limit'; return m[1] + t + '/' + sg[2]; }
@@ -272,10 +272,48 @@ function anBars(rows, color = '#8dc63f') {   /* rows: [[label, value, ...]] — 
   const mx = Math.max(1, ...rows.map(r => r[1])), tot = rows.reduce((a, r) => a + r[1], 0);
   return rows.length ? rows.map(([l, v]) => `<div class="text-sm mb-1.5"><div class="flex justify-between"><span>${esc(l)}</span><span><b>${nb(v)}</b> <span class="text-black/50">(${pct(v, tot)})</span></span></div><div class="h-2 rounded bg-black/5"><div class="h-2 rounded" style="width:${Math.max(2, v / mx * 100)}%;background:${color}"></div></div></div>`).join('') : '<p class="text-sm text-black/50">এখনো ডাটা নেই</p>';
 }
+
+/* ---------- ইউসেজ ট্র্যাকিং: ImageKit ও Cloudinary-র বান্ডউইথ/স্টোরেজ (সার্ভার ফাংশন /api/usage থেকে) ---------- */
+const USG = { d: null, loading: false, err: '', at: 0 };
+async function usgLoad() {
+  if (USG.loading) return; USG.loading = true; USG.err = ''; render();
+  try {
+    const tk = await auth.currentUser.getIdToken();
+    const r = await fetch('/api/usage', { headers: { Authorization: 'Bearer ' + tk } });
+    const j = await r.json().catch(() => ({}));
+    if (!r.ok) throw new Error(j.error || ('HTTP ' + r.status));
+    USG.d = j; USG.at = Date.now();
+  } catch (e) { USG.err = e.message || 'error'; }
+  USG.loading = false; render();
+}
+function usgBar(label, usedTxt, p) {
+  const c = p >= 90 ? '#dc2626' : p >= 70 ? '#f59e0b' : '#8dc63f', w = Math.min(100, Math.max(0, p));
+  return `<div class="text-sm mb-2"><div class="flex justify-between"><span>${label}</span><span><b>${usedTxt}</b> <span class="text-black/50">(${bn(p.toFixed(1).replace(/\.0$/, ''))}%)</span></span></div><div class="h-2 rounded-full bg-black/10 overflow-hidden mt-1"><div style="width:${w}%;background:${c};height:100%"></div></div>${p >= 90 ? '<p class="text-xs red mt-0.5">⚠ সীমা প্রায় শেষ!</p>' : p >= 70 ? '<p class="text-xs mt-0.5" style="color:#b45309">সীমার কাছাকাছি</p>' : ''}</div>`;
+}
+function usgCard() {
+  const G = 1e9, f = x => bn((n0(x) / G).toFixed(2));
+  let body = '';
+  if (USG.loading && !USG.d) body = '<p class="text-sm text-black/60">লোড হচ্ছে…</p>';
+  else if (USG.err) body = `<p class="text-sm red">ইউসেজ আনা যায়নি: ${esc(USG.err)}</p><p class="text-xs text-black/60 mt-1">Vercel-এ /api/usage ফাংশন ও Environment Variable বসানো হয়েছে কি না দেখুন।</p>`;
+  else if (USG.d) {
+    const ik = USG.d.imagekit, cl = USG.d.cloudinary;
+    const ikH = ik && !ik.error ? `<p class="font-semibold text-sm mb-1.5">ImageKit <span class="text-xs font-normal text-black/50">(${bn(ik.since)} থেকে)</span></p>
+      ${usgBar('বান্ডউইথ (ছবি দেখানো)', f(ik.bandwidthBytes) + ' / ' + bn(ik.bwLimitGB) + ' GB', n0(ik.bandwidthBytes) / G / ik.bwLimitGB * 100)}
+      ${usgBar('স্টোরেজ (জমানো ছবি)', f(ik.storageBytes) + ' / ' + bn(ik.storageLimitGB) + ' GB', n0(ik.storageBytes) / G / ik.storageLimitGB * 100)}`
+      : `<p class="font-semibold text-sm">ImageKit</p><p class="text-xs red">${esc(ik?.error || 'তথ্য নেই')}</p>`;
+    const clH = cl && !cl.error ? `<p class="font-semibold text-sm mb-1.5 mt-3">Cloudinary <span class="text-xs font-normal text-black/50">${cl.plan ? '(' + esc(cl.plan) + ')' : ''}</span></p>
+      ${cl.creditsLimit ? usgBar('ক্রেডিট (মাসিক)', bn(n0(cl.creditsUsed).toFixed(2)) + ' / ' + bn(cl.creditsLimit), n0(cl.creditsPct) || n0(cl.creditsUsed) / cl.creditsLimit * 100) : ''}
+      <p class="text-xs text-black/60">বান্ডউইথ ${f(cl.bandwidthBytes)} GB · স্টোরেজ ${f(cl.storageBytes)} GB · ট্রান্সফরমেশন ${nb(cl.transformations)}</p>`
+      : `<p class="font-semibold text-sm mt-3">Cloudinary</p><p class="text-xs red">${esc(cl?.error || 'তথ্য নেই')}</p>`;
+    body = ikH + clH;
+  } else body = '<p class="text-sm text-black/60">এখনো লোড হয়নি।</p>';
+  return `<div class="card p-4 mb-3"><div class="flex items-center mb-2"><h3 class="font-bold">☁ ছবি সার্ভিসের ইউসেজ</h3><button data-act="usgload" class="btn2 ml-auto">🔄</button></div>${body}
+    <p class="text-[11px] text-black/50 mt-2">Firestore ও Vercel-এর ইউসেজ দেখতে: <a class="underline" target="_blank" rel="noopener" href="https://console.firebase.google.com/">Firebase Console → Usage</a> · <a class="underline" target="_blank" rel="noopener" href="https://vercel.com/dashboard">Vercel Dashboard → Usage</a></p></div>`;
+}
 function vAnalytics() {
   const rangeBtn = ([v, t]) => `<button data-act="anrange" data-v="${v}" class="tab px-3 py-1.5 rounded-full border bg-white text-sm ${AN.range === v ? 'on' : ''}">${t}</button>`;
   const head = `<div class="flex flex-wrap items-center gap-2 mb-3">${[[1, 'আজ'], [7, 'শেষ ৭ দিন'], [30, 'শেষ ৩০ দিন'], [90, 'শেষ ৯০ দিন']].map(rangeBtn).join('')}
-    <button data-act="anrefresh" class="btn2 ml-auto">🔄 রিফ্রেশ</button></div>`;
+    <button data-act="anrefresh" class="btn2 ml-auto">🔄 রিফ্রেশ</button></div>` + usgCard();
   if (AN.err === 'permission-denied') return head + `<div class="card p-4 text-sm"><h3 class="font-bold mb-2 red">Firebase Rules এ অনুমতি দিতে হবে</h3>
     <p class="mb-2">Firebase Console → Firestore Database → Rules এ <code>match /databases/{database}/documents {</code> এর ভেতরে নিচের অংশটি যোগ করে <b>Publish</b> করুন:</p>
     <pre class="bg-black/5 rounded-lg p-3 text-xs overflow-x-auto select-all">match /analytics/{day} {
@@ -877,7 +915,7 @@ async function migrateImages() {
 async function ikFromUrl(src) {
   const tk = await auth.currentUser.getIdToken();
   const post = async b => { const res = await fetch('/api/upload', { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + tk }, body: JSON.stringify(b) }); const j = await res.json().catch(() => ({})); if (!res.ok) throw new Error(j.error || 'upload failed'); return j; };
-  try {   // ১) সার্ভার দিয়ে ডাউনলোড → ব্রাউজারে ৫০KB-তে কমপ্রেস → ImageKit
+  try {   // ১) সার্ভার দিয়ে ডাউনলোড → ব্রাউজারে ৪০KB-তে কমপ্রেস → ImageKit
     const d = (await post({ url: src, fetchOnly: true })).data;
     const small = await blobToData(await compress50(await (await fetch(d)).blob()));
     const j = await post({ file: small, fileName: 'lg-' + Date.now() + '.jpg' });
@@ -1027,7 +1065,7 @@ async function migrateExternal() {
 
 /* ---------- 📦 ক্যাটালগ ইমপোর্ট: ক্যাটালগ জিপ/CSV + ছবির ফোল্ডার/জিপ দিলেই প্রোডাক্ট বসে যায় ----------
    ১) ক্যাটালগ ফাইল (catalog-import.zip) বাছুন  ২) ছবির ফোল্ডার বা জিপ বাছুন  ৩) "শুরু করুন"
-   প্রতিটি ছবি ৫০KB-তে ছোট হয়ে ImageKit-এ (না হলে Cloudinary-তে) যায়; একই ছবি দু'বার আপলোড হয় না।
+   প্রতিটি ছবি ৪০KB-তে ছোট হয়ে ImageKit-এ (না হলে Cloudinary-তে) যায়; একই ছবি দু'বার আপলোড হয় না।
    মাঝপথে থামলে/বন্ধ হলে আবার একই ফাইল দিন — যা হয়ে গেছে তা বাদ দিয়ে বাকিটা হবে। */
 let catRun = false;
 const CI = { products: null, links: null, img: new Map(), imgN: 0, plan: null, upd: false, running: false, stop: false, st: null, log: [], shaUrl: null, names: {} };
@@ -1168,7 +1206,7 @@ async function ciPush(blob, sha) {
       const j = await res.json().catch(() => ({}));
       if (res.ok && j.url) return j.url;
       last = new Error(j.error || ('HTTP ' + res.status));
-    } catch (e) { last = e; if (/ছবি পড়া|৫০KB/.test(e.message || '')) break; }
+    } catch (e) { last = e; if (/ছবি পড়া|৪০KB/.test(e.message || '')) break; }
     await ciSleep(1200 * (t + 1));
   }
   try { return await uploadCld(blob); } catch (e) { throw new Error((last && last.message) || e.message); }
@@ -1258,7 +1296,7 @@ function ciDraw() {
   }
   const todo = pl ? pl.items.filter(i => i.act !== 'skip').length : 0;
   openModal(`<div class="flex items-center mb-1"><h2 class="font-bold text-lg mr-auto">📦 ক্যাটালগ ইমপোর্ট (ছবিসহ)</h2><button class="btn2" data-act="close">বন্ধ</button></div>
-  <p class="text-xs text-black/60">শুধু ফাইল দুটো বাছুন, বাকি সব নিজে থেকে হবে। প্রতিটি ছবি ৫০KB-তে ছোট করে ImageKit-এ যাবে।</p>
+  <p class="text-xs text-black/60">শুধু ফাইল দুটো বাছুন, বাকি সব নিজে থেকে হবে। প্রতিটি ছবি ৪০KB-তে ছোট করে ImageKit-এ যাবে।</p>
   <div class="mt-3 space-y-3 ${run ? 'opacity-50 pointer-events-none' : ''}">
     <div><p class="font-semibold text-sm">ধাপ ১: ক্যাটালগ ফাইল <span class="text-xs font-normal text-black/60">(catalog-import.zip)</span></p><input type="file" accept=".zip,.csv" multiple data-ci="cat" class="mt-1"></div>
     <div><p class="font-semibold text-sm">ধাপ ২: ছবি <span class="text-xs font-normal text-black/60">(ছবির জিপ ফাইল, অথবা ছবির ফোল্ডার)</span></p>
@@ -1379,7 +1417,8 @@ async function tgSendOrder(o) {
   return 'text';
 }
 const A = {
-  tab: b => { tab = b.dataset.v; render(); if (tab === 'analytics' && !AN.at) anLoad(); },
+  tab: b => { tab = b.dataset.v; render(); if (tab === 'analytics') { if (!AN.at) anLoad(); if (!USG.at) usgLoad(); } },
+  usgload: () => usgLoad(),
   anrange: b => { AN.range = +b.dataset.v; AN.all = false; anLoad(); },
   ansort: b => { AN.sort = b.dataset.v; render(); },
   anall: () => { AN.all = !AN.all; render(); },
@@ -1415,7 +1454,7 @@ const A = {
       const src = imgs[i]; let obj = '';
       try {
         const r = await fetch(src); if (!r.ok) throw new Error('x');
-        const blob = await compress50(await r.blob());                       // ডাউনলোডেও ৫০KB এর মধ্যে
+        const blob = await compress50(await r.blob());                       // ডাউনলোডেও ৪০KB এর মধ্যে
         const url = obj = URL.createObjectURL(blob);
         const ext = /png/.test(blob.type) ? 'png' : /webp/.test(blob.type) ? 'webp' : 'jpg';
         const el = document.createElement('a'); el.href = url; el.download = String(p.name || 'product').replace(/[^\w-]+/g, '_').slice(0, 40) + '-' + (i + 1) + '.' + ext; document.body.appendChild(el); el.click(); el.remove();
