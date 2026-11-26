@@ -1068,7 +1068,7 @@ async function migrateExternal() {
    প্রতিটি ছবি ৪০KB-তে ছোট হয়ে ImageKit-এ (না হলে Cloudinary-তে) যায়; একই ছবি দু'বার আপলোড হয় না।
    মাঝপথে থামলে/বন্ধ হলে আবার একই ফাইল দিন — যা হয়ে গেছে তা বাদ দিয়ে বাকিটা হবে। */
 let catRun = false;
-const CI = { products: null, links: null, img: new Map(), imgN: 0, plan: null, upd: false, running: false, stop: false, st: null, log: [], shaUrl: null, names: {} };
+const CI = { cld: false, products: null, links: null, img: new Map(), imgN: 0, plan: null, upd: false, running: false, stop: false, st: null, log: [], shaUrl: null, names: {} };
 const ciKey = s => String(s || '').split(/[\\/]/).pop().trim().toLowerCase();
 const ciMime = n => ({ jpg: 'image/jpeg', jpeg: 'image/jpeg', png: 'image/png', webp: 'image/webp', avif: 'image/avif', gif: 'image/gif' })[(String(n).split('.').pop() || '').toLowerCase()] || '';
 
@@ -1198,6 +1198,7 @@ function ciPlan() {
 const ciSleep = ms => new Promise(r => setTimeout(r, ms));
 function ciSave() { try { localStorage.setItem('ci_sha_v1', JSON.stringify([...CI.shaUrl])); } catch (e) {} }
 async function ciPush(blob, sha) {
+  if (CI.cld) return await uploadCld(blob);   // এই ব্যাচের ছবি সরাসরি Cloudinary-তে (ImageKit-এ জায়গা বাঁচাতে)
   let last;
   for (let t = 0; t < 3; t++) {
     try {
@@ -1302,6 +1303,7 @@ function ciDraw() {
     <div><p class="font-semibold text-sm">ধাপ ২: ছবি <span class="text-xs font-normal text-black/60">(ছবির জিপ ফাইল, অথবা ছবির ফোল্ডার)</span></p>
       <div class="flex flex-wrap gap-3 mt-1"><label class="btn2 cursor-pointer">🗜 ছবির ZIP বাছুন<input type="file" accept=".zip,image/*" multiple data-ci="imgs" class="hidden"></label>
       <label class="btn2 cursor-pointer">📁 ছবির ফোল্ডার বাছুন<input type="file" webkitdirectory multiple data-ci="dir" class="hidden"></label></div></div>
+    <label class="flex items-center gap-2 text-xs font-semibold"><input type="checkbox" data-ci="cld" ${CI.cld ? 'checked' : ''}> ☁ এই ব্যাচের ছবি ImageKit-এর বদলে Cloudinary-তে রাখুন</label>
     <label class="flex items-center gap-2 text-xs"><input type="checkbox" data-ci="upd" ${CI.upd ? 'checked' : ''}> সাইটে আগে থেকে থাকা প্রোডাক্টও আপডেট করুন (দাম, বিবরণ ও ছবি নতুন ফাইল থেকে বসবে)</label>
   </div>
   <div class="text-sm" id="ciInfo">${info}</div>
@@ -1312,6 +1314,7 @@ function ciDraw() {
 function ciOpen() { ciDraw(); }
 document.addEventListener('change', async e => {
   const t = e.target, k = t.dataset.ci; if (!k) return;
+  if (k === 'cld') { CI.cld = t.checked; return; }
   if (k === 'upd') { CI.upd = t.checked; if (CI.products) { ciPlan(); ciDraw(); } return; }
   const files = [...t.files]; if (!files.length) return; t.value = '';
   try {
