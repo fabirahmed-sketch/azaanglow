@@ -111,7 +111,7 @@ async function compress50(input) {
   if (src.size <= IMG_MAX && /^image\/(jpeg|png|webp)$/.test(src.type)) return src;   // আগে থেকেই ছোট হলে অরিজিনালই থাকবে
   const url = URL.createObjectURL(src);
   try {
-    const im = await new Promise((ok, no) => { const i = new Image(); i.onload = () => ok(i); i.onerror = () => no(new Error('ছবি পড়া যায়নি')); i.src = url; });
+    const im = await new Promise((ok, no) => { const i = new Image(); i.onload = () => ok(i); i.onerror = async () => { try { const bm = await createImageBitmap(src); bm.naturalWidth = bm.width; bm.naturalHeight = bm.height; ok(bm); } catch (e) { no(new Error('ছবি পড়া যায়নি')); } }; i.src = url; });
     const W = im.naturalWidth, H = im.naturalHeight; let best = null, lastW = 0;
     for (const m of [1200, 1000, 850, 720, 600, 500, 420, 360, 300]) {       // আগে বড় মাপে সর্বোচ্চ কোয়ালিটি খোঁজা হয়, না মিললে মাপ কমে
       const k = Math.min(1, m / Math.max(W, H)), w = Math.max(1, Math.round(W * k)), h = Math.max(1, Math.round(H * k));
@@ -1214,16 +1214,16 @@ async function ciPush(blob, sha) {
 }
 function ciImg(im) {
   if (!CI.shaUrl) { CI.shaUrl = new Map(); try { JSON.parse(localStorage.getItem('ci_sha_v1') || '[]').forEach(([k, v]) => CI.shaUrl.set(k, v)); } catch (e) {} }
-  const hit = CI.shaUrl.get(im.sha); if (hit && typeof hit === 'string') return Promise.resolve(hit);
+  const key = im.sha || ('f:' + im.file); const hit = CI.shaUrl.get(key); if (hit && typeof hit === 'string') return Promise.resolve(hit);
   if (hit) return hit;
   const pr = (async () => {
     const f = CI.img.get(im.file); if (!f) throw new Error('ফাইল নেই');
-    const url = await ciPush(await f.get(), im.sha);
-    CI.shaUrl.set(im.sha, url); CI.st.up++; if (CI.st.up % 25 === 0) ciSave();
+    const url = await ciPush(await f.get(), key);
+    CI.shaUrl.set(key, url); CI.st.up++; if (CI.st.up % 25 === 0) ciSave();
     return url;
   })();
-  CI.shaUrl.set(im.sha, pr);
-  pr.catch(() => { if (CI.shaUrl.get(im.sha) === pr) CI.shaUrl.delete(im.sha); });
+  CI.shaUrl.set(key, pr);
+  pr.catch(() => { if (CI.shaUrl.get(key) === pr) CI.shaUrl.delete(key); });
   return pr;
 }
 
@@ -1247,7 +1247,7 @@ async function ciRun() {
           if (CI.stop) break;
           if (!CI.img.has(im.file)) { CI.st.imgFail++; continue; }
           try { urls.push(await ciImg(im)); CI.st.consec = 0; }
-          catch (e) { CI.st.imgFail++; CI.st.consec++; CI.st.err = e.message || String(e); CI.log.push(it.name + ' → ' + CI.st.err); if (CI.st.consec >= 10) { CI.stop = true; CI.st.stopMsg = 'পরপর অনেকগুলো ছবি আপলোড হয়নি (' + CI.st.err + ') — ইন্টারনেট/ImageKit চেক করে আবার চালান'; } }
+          catch (e) { CI.st.imgFail++; if (!/ছবি পড়া|৪০KB|ফাইল নেই/.test(e.message || '')) CI.st.consec++; CI.st.err = e.message || String(e); CI.log.push(it.name + ' → ' + CI.st.err); if (!/ছবি পড়া|৪০KB|ফাইল নেই/.test(CI.st.err) && CI.st.consec >= 10) { CI.stop = true; CI.st.stopMsg = 'পরপর অনেকগুলো ছবি আপলোড হয়নি (' + CI.st.err + ') — ইন্টারনেট/ImageKit চেক করে আবার চালান'; } }
         }
         if (CI.stop && urls.length < it.imgs.length) continue;   // অর্ধেক ছবি নিয়ে লিখব না; পরের বার আবার হবে
         if (it.imgs.length && !urls.length) CI.st.noImg++;
@@ -1267,7 +1267,7 @@ async function ciRun() {
     }
   };
   ciDraw();
-  await Promise.all([worker(), worker(), worker(), worker()]);
+  await worker();   // একবারে ১টি করে (ফোনের মেমরির জন্য)
   ciSave(); window.onbeforeunload = null; try { await wl?.release(); } catch (e) {}
   CI.running = false; catRun = false; CI.st.end = Date.now(); CI.plan = null; ciDraw(); await ciSleep(3000); ciPlan(); ciDraw();
   toast(CI.stop ? 'থামানো হয়েছে — আবার চালালে বাকিটা হবে' : '✅ ইমপোর্ট শেষ', 6000);
